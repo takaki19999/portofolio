@@ -1,6 +1,6 @@
 # Portfolio on Railway
 
-Deploy the `portofolio` folder as the Railway service root. Add a Railway PostgreSQL service, then expose its `DATABASE_URL` to this service. Railway uses `railway.json` to run `npm run build` and start the Nitro server.
+This repository can be deployed from its root: the root `railway.json` builds and starts the `portofolio` subproject. Alternatively set Railway's **Root Directory** to `portofolio`, which uses that folder's `railway.json`. Add a Railway PostgreSQL service, then expose its `DATABASE_URL` to this service.
 
 The public portfolio is `/`; the management dashboard is `/manager`. Activity records are stored in PostgreSQL, and the dashboard polls every 10 seconds. Enable browser notifications from the manager page to receive new-activity alerts. Notifications always require the manager's browser permission.
 
