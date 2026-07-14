@@ -57,10 +57,22 @@ async function locationFor(ip: string) {
   try {
     const response = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, { signal: AbortSignal.timeout(2500) });
     const data = await response.json() as { country_name?: string; country_code?: string };
-    const location = { country: data.country_name ?? "Unknown", countryCode: data.country_code ?? "--" };
-    locationCache.set(ip, location);
-    return location;
-  } catch { return { country: "Unknown", countryCode: "--" }; }
+    if (data.country_name && data.country_code) {
+      const location = { country: data.country_name, countryCode: data.country_code };
+      locationCache.set(ip, location);
+      return location;
+    }
+  } catch { /* Fall through to the secondary provider. */ }
+  try {
+    const response = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, { signal: AbortSignal.timeout(2500) });
+    const data = await response.json() as { success?: boolean; country?: string; country_code?: string };
+    if (data.success !== false && data.country && data.country_code) {
+      const location = { country: data.country, countryCode: data.country_code };
+      locationCache.set(ip, location);
+      return location;
+    }
+  } catch { /* The table will retry on the next activity refresh. */ }
+  return { country: "Unknown", countryCode: "--" };
 }
 
 function userAgentDetails(userAgent: string) {
@@ -92,8 +104,15 @@ export const recordActivity = createServerFn({ method: "POST" })
 
 export const getActivity = createServerFn({ method: "GET" }).handler(async () => {
   await ensureSchema();
-  const result = await database().query(`SELECT id, ip, country, country_code AS "countryCode", device, browser, os, status, app_status AS "appStatus",
-    updated_at AS "lastActivity" FROM portfolio_activity ORDER BY updated_at DESC LIMIT 500`);
+  const unresolved = await database().query<{ id: string; ip: string }>("SELECT id, ip FROM portfolio_activity WHERE country = 'Unknown' AND ip <> 'Unknown' LIMIT 25");
+  await Promise.all(unresolved.rows.map(async ({ id, ip }) => {
+    const location = await locationFor(ip);
+    if (location.country !== "Unknown") await database().query("UPDATE portfolio_activity SET country = $1, country_code = $2 WHERE id = $3", [location.country, location.countryCode, id]);
+  }));
+  const result = await database().query(`SELECT id, ip, country, country_code AS "countryCode", device, browser, os,
+    CASE WHEN updated_at > NOW() - INTERVAL '45 seconds' THEN 'active' ELSE 'left' END AS status,
+    app_status AS "appStatus", updated_at AS "lastActivity"
+    FROM portfolio_activity ORDER BY updated_at DESC LIMIT 500`);
   return result.rows as ActivityRecord[];
 });
 
