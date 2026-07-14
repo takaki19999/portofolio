@@ -1,0 +1,8 @@
+{
+  "name": "portfolio-railway-root",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix portofolio install --include=dev && NITRO_PRESET=node-server npm --prefix portofolio run build",
+    "start": "npm --prefix portofolio run start"
+  }
+}
