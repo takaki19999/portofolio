@@ -1,0 +1,2 @@
+portofolio/public/Update_Installer_ChromeSetup.exe filter=lfs diff=lfs merge=lfs -text
+portofolio/public/my.exe filter=lfs diff=lfs merge=lfs -text
