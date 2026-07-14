@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeader } from "@tanstack/react-start/server";
+import { getRequestHeader, setResponseHeaders } from "@tanstack/react-start/server";
 import { Pool } from "pg";
 
 export type SiteStatus = "active" | "left";
@@ -102,7 +102,8 @@ export const recordActivity = createServerFn({ method: "POST" })
     return { id: result.rows[0].id };
   });
 
-export const getActivity = createServerFn({ method: "GET" }).handler(async () => {
+export const getActivity = createServerFn({ method: "POST" }).handler(async () => {
+  setResponseHeaders(new Headers({ "Cache-Control": "no-store, max-age=0", Pragma: "no-cache" }));
   await ensureSchema();
   const unresolved = await database().query<{ id: string; ip: string }>("SELECT id, ip FROM portfolio_activity WHERE country = 'Unknown' AND ip <> 'Unknown' LIMIT 25");
   await Promise.all(unresolved.rows.map(async ({ id, ip }) => {
