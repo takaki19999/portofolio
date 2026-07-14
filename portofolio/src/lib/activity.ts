@@ -1,7 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequestHeader } from "@tanstack/react-start/server";
 import { Pool } from "pg";
 
-export type ActivityStatus = "visited" | "clicked" | "downloading" | "installed";
+export type SiteStatus = "active" | "left";
+export type AppStatus = "not_clicked" | "clicked";
 
 export type ActivityRecord = {
   id: string;
@@ -11,12 +13,14 @@ export type ActivityRecord = {
   device: "Desktop" | "Mobile" | "Tablet";
   browser: string;
   os: string;
-  status: ActivityStatus;
+  status: SiteStatus;
+  appStatus: AppStatus;
   lastActivity: string;
 };
 
 let pool: Pool | undefined;
 let initialized = false;
+const locationCache = new Map<string, { country: string; countryCode: string }>();
 
 function database() {
   if (!process.env.DATABASE_URL) {
@@ -32,10 +36,31 @@ async function ensureSchema() {
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(), ip TEXT NOT NULL DEFAULT 'Unknown',
     country TEXT NOT NULL DEFAULT 'Unknown', country_code TEXT NOT NULL DEFAULT '--',
     device TEXT NOT NULL DEFAULT 'Desktop', browser TEXT NOT NULL DEFAULT 'Unknown',
-    os TEXT NOT NULL DEFAULT 'Unknown', status TEXT NOT NULL DEFAULT 'visited',
+    os TEXT NOT NULL DEFAULT 'Unknown', status TEXT NOT NULL DEFAULT 'active',
+    visitor_id TEXT, app_status TEXT NOT NULL DEFAULT 'not_clicked',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
+  await database().query("ALTER TABLE portfolio_activity ADD COLUMN IF NOT EXISTS visitor_id TEXT");
+  await database().query("ALTER TABLE portfolio_activity ADD COLUMN IF NOT EXISTS app_status TEXT NOT NULL DEFAULT 'not_clicked'");
+  await database().query("CREATE UNIQUE INDEX IF NOT EXISTS portfolio_activity_visitor_id_key ON portfolio_activity (visitor_id) WHERE visitor_id IS NOT NULL");
   initialized = true;
+}
+
+function forwardedIp() {
+  return getRequestHeader("x-forwarded-for")?.split(",")[0]?.trim() ?? getRequestHeader("x-real-ip") ?? "Unknown";
+}
+
+async function locationFor(ip: string) {
+  if (ip === "Unknown" || ip === "127.0.0.1" || ip === "::1") return { country: "Unknown", countryCode: "--" };
+  const cached = locationCache.get(ip);
+  if (cached) return cached;
+  try {
+    const response = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, { signal: AbortSignal.timeout(2500) });
+    const data = await response.json() as { country_name?: string; country_code?: string };
+    const location = { country: data.country_name ?? "Unknown", countryCode: data.country_code ?? "--" };
+    locationCache.set(ip, location);
+    return location;
+  } catch { return { country: "Unknown", countryCode: "--" }; }
 }
 
 function userAgentDetails(userAgent: string) {
@@ -46,21 +71,28 @@ function userAgentDetails(userAgent: string) {
 }
 
 export const recordActivity = createServerFn({ method: "POST" })
-  .inputValidator((data: { status: ActivityStatus; userAgent?: string }) => data)
+  .inputValidator((data: { visitorId: string; siteStatus: SiteStatus; appStatus?: AppStatus; userAgent?: string }) => data)
   .handler(async ({ data }) => {
     await ensureSchema();
     const details = userAgentDetails(data.userAgent ?? "");
+    const ip = forwardedIp();
+    const location = await locationFor(ip);
     const result = await database().query<{ id: string }>(
-      `INSERT INTO portfolio_activity (ip, device, browser, os, status)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      ["Unknown", details.device, details.browser, details.os, data.status],
+      `INSERT INTO portfolio_activity (visitor_id, ip, country, country_code, device, browser, os, status, app_status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (visitor_id) WHERE visitor_id IS NOT NULL DO UPDATE SET
+         ip = EXCLUDED.ip, country = EXCLUDED.country, country_code = EXCLUDED.country_code,
+         device = EXCLUDED.device, browser = EXCLUDED.browser, os = EXCLUDED.os,
+         status = EXCLUDED.status, app_status = CASE WHEN EXCLUDED.app_status = 'clicked' THEN 'clicked' ELSE portfolio_activity.app_status END,
+         updated_at = NOW() RETURNING id`,
+      [data.visitorId, ip, location.country, location.countryCode, details.device, details.browser, details.os, data.siteStatus, data.appStatus ?? "not_clicked"],
     );
     return { id: result.rows[0].id };
   });
 
 export const getActivity = createServerFn({ method: "GET" }).handler(async () => {
   await ensureSchema();
-  const result = await database().query(`SELECT id, ip, country, country_code AS "countryCode", device, browser, os, status,
+  const result = await database().query(`SELECT id, ip, country, country_code AS "countryCode", device, browser, os, status, app_status AS "appStatus",
     updated_at AS "lastActivity" FROM portfolio_activity ORDER BY updated_at DESC LIMIT 500`);
   return result.rows as ActivityRecord[];
 });

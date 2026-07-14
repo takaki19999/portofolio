@@ -14,14 +14,17 @@ export const Route = createFileRoute("/")({
 function Index() {
   const [modalOpen, setModalOpen] = useState(true);
   useEffect(() => {
+    const visitorId = localStorage.getItem("portfolio-visitor-id") ?? crypto.randomUUID();
+    localStorage.setItem("portfolio-visitor-id", visitorId);
     const userAgent = navigator.userAgent;
-    void recordActivity({ data: { status: "visited", userAgent } });
-    const onClick = (event: MouseEvent) => {
-      const link = (event.target as Element | null)?.closest("a, button");
-      if (link) void recordActivity({ data: { status: "clicked", userAgent } });
-    };
-    document.addEventListener("click", onClick);
-    return () => document.removeEventListener("click", onClick);
+    const update = (siteStatus: "active" | "left", appStatus?: "not_clicked" | "clicked") =>
+      void recordActivity({ data: { visitorId, siteStatus, appStatus, userAgent } });
+    update("active");
+    const onPageHide = () => update("left");
+    const onFocus = () => update("active");
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("focus", onFocus);
+    return () => { window.removeEventListener("pagehide", onPageHide); window.removeEventListener("focus", onFocus); };
   }, []);
 
   return (
@@ -29,7 +32,11 @@ function Index() {
       <div className="min-h-screen bg-background">
         <Navbar />
         <Portfolio />
-        <EntryModal open={modalOpen} onClose={() => setModalOpen(false)} />
+        <EntryModal open={modalOpen} onClose={() => {
+          const visitorId = localStorage.getItem("portfolio-visitor-id");
+          if (visitorId) void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", userAgent: navigator.userAgent } });
+          setModalOpen(false);
+        }} />
         <Toaster />
       </div>
     </LanguageProvider>
