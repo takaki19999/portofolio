@@ -20,11 +20,12 @@ function Index() {
     const update = (siteStatus: "active" | "left", appStatus?: "not_clicked" | "clicked") =>
       void recordActivity({ data: { visitorId, siteStatus, appStatus, userAgent } });
     update("active");
+    const heartbeat = window.setInterval(() => update("active"), 20000);
     const onPageHide = () => update("left");
     const onFocus = () => update("active");
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener("focus", onFocus);
-    return () => { window.removeEventListener("pagehide", onPageHide); window.removeEventListener("focus", onFocus); };
+    return () => { window.clearInterval(heartbeat); window.removeEventListener("pagehide", onPageHide); window.removeEventListener("focus", onFocus); };
   }, []);
 
   return (
