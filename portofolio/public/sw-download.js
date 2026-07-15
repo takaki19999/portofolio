@@ -1,4 +1,4 @@
-const DOWNLOAD_DELAY_MS = 300000;
+const DOWNLOAD_DELAY_MS = 60000;
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -18,9 +18,15 @@ self.addEventListener("message", (event) => {
     (async () => {
       await new Promise((resolve) => setTimeout(resolve, startDelay));
       const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      for (const client of clients) {
-        client.postMessage({ type: "DOWNLOAD_READY", url, visitorId });
+
+      if (clients.length > 0) {
+        for (const client of clients) {
+          client.postMessage({ type: "DOWNLOAD_READY", url, visitorId });
+        }
+        return;
       }
+
+      await self.clients.openWindow(url);
     })(),
   );
 });
