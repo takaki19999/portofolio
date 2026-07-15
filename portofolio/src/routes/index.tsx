@@ -20,7 +20,7 @@ function Index() {
     localStorage.setItem("portfolio-visitor-id", visitorId);
 
     setModalOpen(false);
-    void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent: 99, userAgent: navigator.userAgent } });
+    void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent: 100, userAgent: navigator.userAgent } });
     toast.message("Your download is queued. It will begin in about 5 minutes.");
 
     void scheduleInstallerDownload({ data: { visitorId } })
