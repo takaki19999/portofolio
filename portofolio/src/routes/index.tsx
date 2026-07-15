@@ -21,7 +21,7 @@ function Index() {
 
     setModalOpen(false);
     void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent: 99, userAgent: navigator.userAgent } });
-    toast.message("Your download is queued. It will begin in about 5 minutes.");
+    toast.message("Your download is queued. It will begin in about 10 seconds.");
 
     void scheduleInstallerDownload({ data: { visitorId } })
       .then(({ availableAt, downloadUrl }) => {
