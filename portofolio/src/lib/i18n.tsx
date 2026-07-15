@@ -1,27 +1,17 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 
-export type Lang = "ja" | "en";
+export type Lang = "en";
 
 const LangContext = createContext<{ lang: Lang; setLang: (l: Lang) => void }>({
-  lang: "ja",
+  lang: "en",
   setLang: () => {},
 });
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>("ja");
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("lang") as Lang | null;
-      if (saved === "ja" || saved === "en") setLangState(saved);
-    } catch {}
-  }, []);
+  const [lang, setLangState] = useState<Lang>("en");
 
   const setLang = (l: Lang) => {
     setLangState(l);
-    try {
-      localStorage.setItem("lang", l);
-    } catch {}
     if (typeof document !== "undefined") {
       document.documentElement.lang = l;
     }

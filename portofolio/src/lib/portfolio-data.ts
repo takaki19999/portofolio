@@ -3,7 +3,6 @@ import cryptoQuest from "@/assets/crypto-quest.png";
 import eventImg from "@/assets/event.png";
 import defiYield from "@/assets/defi-yield.png";
 import avatar from "@/assets/avatar.png";
-import type { Lang } from "./i18n";
 
 export const images = {
   devDesk,
@@ -425,8 +424,8 @@ const en: Content = {
   ],
 };
 
-export function getContent(lang: Lang): Content {
-  return lang === "ja" ? ja : en;
+export function getContent(): Content {
+  return en;
 }
 
 export type { Content };

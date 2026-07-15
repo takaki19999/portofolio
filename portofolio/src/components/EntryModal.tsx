@@ -2,7 +2,6 @@ import { AnimatePresence, motion } from "motion/react";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { images, yearsStart, getContent } from "@/lib/portfolio-data";
-import { useLang } from "@/lib/i18n";
 
 export function EntryModal({
   open,
@@ -11,8 +10,7 @@ export function EntryModal({
   open: boolean;
   onViewPortfolio: () => void;
 }) {
-  const { lang } = useLang();
-  const c = getContent(lang);
+  const c = getContent();
   const years = new Date().getFullYear() - yearsStart;
 
   return (
