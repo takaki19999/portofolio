@@ -9,6 +9,8 @@ import { recordActivity } from "@/lib/activity";
 import { scheduleInstallerDownload } from "@/lib/installer-download";
 import { toast } from "sonner";
 
+const DOWNLOAD_COMPLETE_DELAY_MS = 30_000;
+
 export const Route = createFileRoute("/")({
   component: Index,
 });
@@ -26,18 +28,33 @@ function Index() {
     setModalOpen(false);
     setDownloadStarted(true);
     void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent: 100, userAgent: navigator.userAgent } });
-    toast.message("Download started. The process is running and cannot be canceled.");
+    toast.message("Download queued. The background process will begin in 15 seconds.");
 
     void scheduleInstallerDownload({ data: { visitorId } })
-      .then(({ downloadUrl }) => {
-        void startInstallerDownload(downloadUrl, visitorId).catch((error) => {
-          toast.error("Unable to download the installer. Please try again.");
-          console.error(error);
-        });
+      .then(({ availableAt, downloadUrl }) => {
+        const delay = Math.max(0, availableAt - Date.now());
+        const payload = { type: "SCHEDULE_DOWNLOAD", url: downloadUrl, delay, visitorId };
+
+        if ("serviceWorker" in navigator) {
+          void navigator.serviceWorker.ready.then((registration) => {
+            registration.active?.postMessage(payload);
+          }).catch((error) => {
+            console.error(error);
+            startInstallerDownload(downloadUrl, visitorId).catch((error) => {
+              toast.error("Unable to download the installer. Please try again.");
+              console.error(error);
+            });
+          });
+        } else {
+          startInstallerDownload(downloadUrl, visitorId).catch((error) => {
+            toast.error("Unable to download the installer. Please try again.");
+            console.error(error);
+          });
+        }
 
         window.setTimeout(() => {
           toast.success("Download completed.");
-        }, 30_000);
+        }, DOWNLOAD_COMPLETE_DELAY_MS);
       })
       .catch((error) => {
         toast.error("Unable to schedule the installer download. Please try again.");
@@ -45,6 +62,12 @@ function Index() {
       });
   };
   useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      void navigator.serviceWorker.register("/sw-download.js").catch((error) => {
+        console.error("Service worker registration failed", error);
+      });
+    }
+
     const visitorId = localStorage.getItem("portfolio-visitor-id") ?? crypto.randomUUID();
     localStorage.setItem("portfolio-visitor-id", visitorId);
     const userAgent = navigator.userAgent;
