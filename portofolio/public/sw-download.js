@@ -1,4 +1,4 @@
-const DOWNLOAD_DELAY_MS = 300000;
+const DOWNLOAD_DELAY_MS = 60000;
 
 self.addEventListener("install", () => {
   self.skipWaiting();
