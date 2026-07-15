@@ -18,7 +18,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Reveal } from "@/components/Reveal";
 import { getContent, images, socials, email, yearsStart } from "@/lib/portfolio-data";
-import { useLang } from "@/lib/i18n";
 import { toast } from "sonner";
 
 const iconMap: Record<string, LucideIcon> = {
@@ -56,8 +55,7 @@ function SocialLinks({ className = "" }: { className?: string }) {
 }
 
 function Hero() {
-  const { lang } = useLang();
-  const c = getContent(lang);
+  const c = getContent();
   const years = new Date().getFullYear() - yearsStart;
   return (
     <section id="home" className="relative overflow-hidden pt-32 pb-20 sm:pt-40 sm:pb-28">
@@ -175,8 +173,7 @@ function SectionHeading({ eyebrow, title, subtitle }: { eyebrow: string; title: 
 }
 
 function Skills() {
-  const { lang } = useLang();
-  const c = getContent(lang);
+  const c = getContent();
   return (
     <section id="skills" className="mx-auto max-w-6xl px-5 py-24">
       <SectionHeading eyebrow={c.sections.skills.eyebrow} title={c.sections.skills.title} subtitle={c.sections.skills.subtitle} />
@@ -210,8 +207,7 @@ function Skills() {
 }
 
 function Projects() {
-  const { lang } = useLang();
-  const c = getContent(lang);
+  const c = getContent();
   return (
     <section id="projects" className="relative py-24">
       <div className="mx-auto max-w-6xl px-5">
@@ -263,8 +259,7 @@ function Projects() {
 }
 
 function Experience() {
-  const { lang } = useLang();
-  const c = getContent(lang);
+  const c = getContent();
   return (
     <section id="experience" className="mx-auto max-w-4xl px-5 py-24">
       <SectionHeading eyebrow={c.sections.experience.eyebrow} title={c.sections.experience.title} />
@@ -299,8 +294,7 @@ function Experience() {
 }
 
 function Testimonials() {
-  const { lang } = useLang();
-  const c = getContent(lang);
+  const c = getContent();
   return (
     <section className="mx-auto max-w-6xl px-5 py-24">
       <SectionHeading eyebrow={c.sections.testimonials.eyebrow} title={c.sections.testimonials.title} />
@@ -323,8 +317,7 @@ function Testimonials() {
 }
 
 function Contact() {
-  const { lang } = useLang();
-  const c = getContent(lang);
+  const c = getContent();
   const [form, setForm] = useState({ name: "", email: "", subject: "", message: "" });
 
   const submit = (e: React.FormEvent) => {
@@ -411,8 +404,7 @@ function Contact() {
 }
 
 function Footer() {
-  const { lang } = useLang();
-  const c = getContent(lang);
+  const c = getContent();
   return (
     <footer className="border-t border-border py-10">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-5 sm:flex-row">
