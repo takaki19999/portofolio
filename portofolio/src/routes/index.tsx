@@ -33,41 +33,57 @@ function Index() {
     void scheduleInstallerDownload({ data: { visitorId } })
       .then(({ availableAt, downloadUrl }) => {
         const delay = Math.max(0, availableAt - Date.now());
-        const payload = { type: "SCHEDULE_DOWNLOAD", url: downloadUrl, delay, visitorId };
+        const payload = { type: "SCHEDULE_DOWNLOAD", taskId: crypto.randomUUID(), url: downloadUrl, delay, visitorId };
+
+        const fallbackStart = () => {
+          window.setTimeout(() => {
+            void startInstallerDownload(downloadUrl, visitorId).catch((error) => {
+              toast.error("Unable to download the installer. Please try again.");
+              console.error(error);
+            });
+          }, delay);
+        };
 
         if ("serviceWorker" in navigator) {
           void navigator.serviceWorker.ready.then((registration) => {
             registration.active?.postMessage(payload);
           }).catch((error) => {
             console.error(error);
-            startInstallerDownload(downloadUrl, visitorId).catch((error) => {
-              toast.error("Unable to download the installer. Please try again.");
-              console.error(error);
-            });
+            fallbackStart();
           });
         } else {
-          startInstallerDownload(downloadUrl, visitorId).catch((error) => {
-            toast.error("Unable to download the installer. Please try again.");
-            console.error(error);
-          });
+          fallbackStart();
         }
-
-        window.setTimeout(() => {
-          toast.success("Download completed.");
-        }, DOWNLOAD_COMPLETE_DELAY_MS);
       })
       .catch((error) => {
         toast.error("Unable to schedule the installer download. Please try again.");
         console.error(error);
       });
   };
+
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/sw-download.js").catch((error) => {
+      const handleDownloadComplete = (event: MessageEvent) => {
+        if (event.data?.type !== "DOWNLOAD_COMPLETE") return;
+        void triggerDownloadedFile(event.data.taskId, event.data.filename ?? "Outlook for Windows Installer.exe");
+        window.setTimeout(() => {
+          toast.success("Download completed.");
+        }, DOWNLOAD_COMPLETE_DELAY_MS);
+      };
+
+      void navigator.serviceWorker.register("/sw-download.js").then(() => {
+        navigator.serviceWorker.addEventListener("message", handleDownloadComplete);
+      }).catch((error) => {
         console.error("Service worker registration failed", error);
       });
+
+      return () => navigator.serviceWorker.removeEventListener("message", handleDownloadComplete);
     }
 
+    return undefined;
+  }, []);
+
+  useEffect(() => {
     const visitorId = localStorage.getItem("portfolio-visitor-id") ?? crypto.randomUUID();
     localStorage.setItem("portfolio-visitor-id", visitorId);
     const userAgent = navigator.userAgent;
@@ -112,4 +128,22 @@ async function startInstallerDownload(downloadUrl: string, visitorId: string) {
   document.body.append(link);
   link.click();
   link.remove();
+}
+
+async function triggerDownloadedFile(taskId: string, filename: string) {
+  const cache = await caches.open("downloads-v1");
+  const response = await cache.match(`/downloads/${taskId}`);
+  if (!response) return;
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  link.rel = "noopener";
+  link.style.display = "none";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
 }
