@@ -23,7 +23,7 @@ export function EntryModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.4 }}
+          transition={{ duration: 0 }}
         >
           <div className="absolute inset-0 bg-background/70 backdrop-blur-xl" aria-hidden />
           <motion.div
@@ -33,7 +33,7 @@ export function EntryModal({
             className="glass-card relative z-10 my-auto w-full max-w-2xl rounded-3xl p-8 sm:p-10"
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.92, y: 10 }}
+            exit={{ opacity: 0, scale: 1, y: 0 }}
             transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
           >
             <div

