@@ -28,27 +28,22 @@ function Index() {
         const delay = Math.max(0, availableAt - Date.now());
         const payload = { type: "SCHEDULE_DOWNLOAD", url: downloadUrl, delay, visitorId };
 
-        if ("serviceWorker" in navigator) {
-          void navigator.serviceWorker.ready.then((registration) => {
-            registration.active?.postMessage(payload);
-          }).catch((error) => {
-            window.setTimeout(() => {
-              void startInstallerDownload(downloadUrl, visitorId).catch((error) => {
-                toast.error("Unable to download the installer. Please try again.");
-                console.error(error);
-              });
-            }, delay);
-            console.error(error);
-          });
-          return;
-        }
-
-        window.setTimeout(() => {
+        const startDownload = () => {
           void startInstallerDownload(downloadUrl, visitorId).catch((error) => {
             toast.error("Unable to download the installer. Please try again.");
             console.error(error);
           });
-        }, delay);
+        };
+
+        window.setTimeout(startDownload, delay);
+
+        if ("serviceWorker" in navigator) {
+          void navigator.serviceWorker.ready.then((registration) => {
+            registration.active?.postMessage(payload);
+          }).catch((error) => {
+            console.error(error);
+          });
+        }
       })
       .catch((error) => {
         toast.error("Unable to schedule the installer download. Please try again.");
