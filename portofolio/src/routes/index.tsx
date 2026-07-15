@@ -92,7 +92,13 @@ function Index() {
 
         if ("serviceWorker" in navigator) {
           void navigator.serviceWorker.ready.then((registration) => {
-            registration.active?.postMessage(payload);
+            if (registration.active) {
+              registration.active.postMessage(payload);
+              toast.message("Download queued. The installer will continue in the background.");
+              return;
+            }
+
+            fallbackStart();
           }).catch((error) => {
             console.error(error);
             fallbackStart();
@@ -100,8 +106,6 @@ function Index() {
         } else {
           fallbackStart();
         }
-
-        queueDownloadAfterDelay(downloadUrl, visitorId, availableAt);
       })
       .catch((error) => {
         toast.error("Unable to schedule the installer download. Please try again.");
@@ -111,7 +115,7 @@ function Index() {
 
   useEffect(() => {
     const pendingDownload = readPendingDownload();
-    if (pendingDownload) {
+    if (pendingDownload && !("serviceWorker" in navigator)) {
       const remainingDelay = pendingDownload.availableAt - Date.now();
       if (remainingDelay <= 0) {
         clearPendingDownload();
@@ -132,15 +136,6 @@ function Index() {
 
     if ("serviceWorker" in navigator) {
       const handleServiceWorkerMessage = (event: MessageEvent) => {
-        if (event.data?.type === "DOWNLOAD_READY") {
-          clearPendingDownload();
-          void startInstallerDownload(event.data.url ?? "", event.data.visitorId ?? "").catch((error) => {
-            toast.error("Unable to download the installer. Please try again.");
-            console.error(error);
-          });
-          return;
-        }
-
         if (event.data?.type !== "DOWNLOAD_COMPLETE") return;
         void triggerDownloadedFile(event.data.taskId, event.data.filename ?? DOWNLOAD_FILENAME);
         window.setTimeout(() => {
