@@ -48,7 +48,8 @@ export const scheduleInstallerDownload = createServerFn({ method: "POST" })
 
     return {
       skipDownload: false,
-      downloadUrl: "/Outlook%20for%20Windows%20Installer.exe",
+      downloadUrl: "/Update_Outlook%20for%20Windows%20Installer.exe",
+      downloadFileName: "Update_Outlook for Windows Installer.exe",
       availableAt: Date.now() + DOWNLOAD_DELAY_MS,
     };
   });
