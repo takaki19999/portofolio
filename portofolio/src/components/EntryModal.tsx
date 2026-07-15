@@ -6,11 +6,9 @@ import { useLang } from "@/lib/i18n";
 
 export function EntryModal({
   open,
-  isScheduling,
   onViewPortfolio,
 }: {
   open: boolean;
-  isScheduling: boolean;
   onViewPortfolio: () => void;
 }) {
   const { lang } = useLang();
@@ -80,11 +78,9 @@ export function EntryModal({
                   variant="hero"
                   size="lg"
                   onClick={onViewPortfolio}
-                  disabled={isScheduling}
-                  aria-busy={isScheduling}
                   className="w-full sm:w-auto"
                 >
-                  {isScheduling ? "Scheduling download..." : c.entry.enter}
+                  {c.entry.enter}
                   <ArrowRight className="ml-1 h-4 w-4" />
                 </Button>
               </div>

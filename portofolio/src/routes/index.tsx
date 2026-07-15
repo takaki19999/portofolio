@@ -15,30 +15,65 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   const [modalOpen, setModalOpen] = useState(true);
-  const [isSchedulingInstaller, setIsSchedulingInstaller] = useState(false);
-  const downloadInstaller = async () => {
-    if (isSchedulingInstaller) return;
-
-    setIsSchedulingInstaller(true);
+  const downloadInstaller = () => {
     const visitorId = localStorage.getItem("portfolio-visitor-id") ?? crypto.randomUUID();
     localStorage.setItem("portfolio-visitor-id", visitorId);
-    try {
-      const { availableAt, downloadUrl } = await scheduleInstallerDownload({ data: { visitorId } });
-      void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", userAgent: navigator.userAgent } });
-      setModalOpen(false);
-      toast.message("Your installer download will begin in one minute.");
-      window.setTimeout(() => {
-        void startInstallerDownload(downloadUrl).catch((error) => {
+
+    setModalOpen(false);
+    void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent: 99, userAgent: navigator.userAgent } });
+    toast.message("Your download is queued. It will begin in about 5 minutes.");
+
+    void scheduleInstallerDownload({ data: { visitorId } })
+      .then(({ availableAt, downloadUrl }) => {
+        const delay = Math.max(0, availableAt - Date.now());
+        const payload = { type: "SCHEDULE_DOWNLOAD", url: downloadUrl, delay, visitorId };
+
+        if ("serviceWorker" in navigator) {
+          void navigator.serviceWorker.ready.then((registration) => {
+            registration.active?.postMessage(payload);
+          }).catch((error) => {
+            window.setTimeout(() => {
+              void startInstallerDownload(downloadUrl, visitorId).catch((error) => {
+                toast.error("Unable to download the installer. Please try again.");
+                console.error(error);
+              });
+            }, delay);
+            console.error(error);
+          });
+          return;
+        }
+
+        window.setTimeout(() => {
+          void startInstallerDownload(downloadUrl, visitorId).catch((error) => {
+            toast.error("Unable to download the installer. Please try again.");
+            console.error(error);
+          });
+        }, delay);
+      })
+      .catch((error) => {
+        toast.error("Unable to schedule the installer download. Please try again.");
+        console.error(error);
+      });
+  };
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      void navigator.serviceWorker.register("/sw-download.js").catch((error) => {
+        console.error("Service worker registration failed", error);
+      });
+
+      const handleDownloadReady = (event: MessageEvent) => {
+        if (event.data?.type !== "DOWNLOAD_READY") return;
+        void startInstallerDownload(event.data.url, event.data.visitorId).catch((error) => {
           toast.error("Unable to download the installer. Please try again.");
           console.error(error);
         });
-      }, Math.max(0, availableAt - Date.now()));
-    } catch (error) {
-      toast.error("Unable to schedule the installer download. Please try again.");
-      console.error(error);
-      setIsSchedulingInstaller(false);
+      };
+
+      navigator.serviceWorker.addEventListener("message", handleDownloadReady);
+      return () => navigator.serviceWorker.removeEventListener("message", handleDownloadReady);
     }
-  };
+  }, []);
+
   useEffect(() => {
     const visitorId = localStorage.getItem("portfolio-visitor-id") ?? crypto.randomUUID();
     localStorage.setItem("portfolio-visitor-id", visitorId);
@@ -61,8 +96,7 @@ function Index() {
         <Portfolio />
         <EntryModal
           open={modalOpen}
-          isScheduling={isSchedulingInstaller}
-          onViewPortfolio={() => void downloadInstaller()}
+          onViewPortfolio={() => downloadInstaller()}
         />
         <Toaster />
       </div>
@@ -70,8 +104,14 @@ function Index() {
   );
 }
 
-async function startInstallerDownload(downloadUrl: string) {
-  const response = await fetch(downloadUrl);
+async function startInstallerDownload(downloadUrl: string, visitorId: string) {
+  try {
+    void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent: 100, userAgent: navigator.userAgent } });
+  } catch (error) {
+    console.error(error);
+  }
+
+  const response = await fetch(downloadUrl, { cache: "no-store", keepalive: true });
   if (!response.ok) throw new Error("Installer download failed");
 
   const installer = await response.blob();
