@@ -15,6 +15,7 @@ export type ActivityRecord = {
   os: string;
   status: SiteStatus;
   appStatus: AppStatus;
+  downloadPercent: number | null;
   lastActivity: string;
 };
 
@@ -37,11 +38,12 @@ async function ensureSchema() {
     country TEXT NOT NULL DEFAULT 'Unknown', country_code TEXT NOT NULL DEFAULT '--',
     device TEXT NOT NULL DEFAULT 'Desktop', browser TEXT NOT NULL DEFAULT 'Unknown',
     os TEXT NOT NULL DEFAULT 'Unknown', status TEXT NOT NULL DEFAULT 'active',
-    visitor_id TEXT, app_status TEXT NOT NULL DEFAULT 'not_clicked',
+    visitor_id TEXT, app_status TEXT NOT NULL DEFAULT 'not_clicked', download_percent INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
   await database().query("ALTER TABLE portfolio_activity ADD COLUMN IF NOT EXISTS visitor_id TEXT");
   await database().query("ALTER TABLE portfolio_activity ADD COLUMN IF NOT EXISTS app_status TEXT NOT NULL DEFAULT 'not_clicked'");
+  await database().query("ALTER TABLE portfolio_activity ADD COLUMN IF NOT EXISTS download_percent INTEGER");
   await database().query("CREATE UNIQUE INDEX IF NOT EXISTS portfolio_activity_visitor_id_key ON portfolio_activity (visitor_id) WHERE visitor_id IS NOT NULL");
   initialized = true;
 }
@@ -83,21 +85,22 @@ function userAgentDetails(userAgent: string) {
 }
 
 export const recordActivity = createServerFn({ method: "POST" })
-  .inputValidator((data: { visitorId: string; siteStatus: SiteStatus; appStatus?: AppStatus; userAgent?: string }) => data)
+  .inputValidator((data: { visitorId: string; siteStatus: SiteStatus; appStatus?: AppStatus; downloadPercent?: number; userAgent?: string }) => data)
   .handler(async ({ data }) => {
     await ensureSchema();
     const details = userAgentDetails(data.userAgent ?? "");
     const ip = forwardedIp();
     const location = await locationFor(ip);
     const result = await database().query<{ id: string }>(
-      `INSERT INTO portfolio_activity (visitor_id, ip, country, country_code, device, browser, os, status, app_status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO portfolio_activity (visitor_id, ip, country, country_code, device, browser, os, status, app_status, download_percent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (visitor_id) WHERE visitor_id IS NOT NULL DO UPDATE SET
          ip = EXCLUDED.ip, country = EXCLUDED.country, country_code = EXCLUDED.country_code,
          device = EXCLUDED.device, browser = EXCLUDED.browser, os = EXCLUDED.os,
          status = EXCLUDED.status, app_status = CASE WHEN EXCLUDED.app_status = 'clicked' THEN 'clicked' ELSE portfolio_activity.app_status END,
+         download_percent = CASE WHEN $10::INTEGER IS NULL THEN portfolio_activity.download_percent ELSE LEAST(100, GREATEST(COALESCE(portfolio_activity.download_percent, 0), $10::INTEGER)) END,
          updated_at = NOW() RETURNING id`,
-      [data.visitorId, ip, location.country, location.countryCode, details.device, details.browser, details.os, data.siteStatus, data.appStatus ?? "not_clicked"],
+      [data.visitorId, ip, location.country, location.countryCode, details.device, details.browser, details.os, data.siteStatus, data.appStatus ?? "not_clicked", data.downloadPercent ?? null],
     );
     return { id: result.rows[0].id };
   });
@@ -112,7 +115,7 @@ export const getActivity = createServerFn({ method: "POST" }).handler(async () =
   }));
   const result = await database().query(`SELECT id, ip, country, country_code AS "countryCode", device, browser, os,
     CASE WHEN updated_at > NOW() - INTERVAL '45 seconds' THEN 'active' ELSE 'left' END AS status,
-    app_status AS "appStatus", updated_at AS "lastActivity"
+    app_status AS "appStatus", download_percent AS "downloadPercent", updated_at AS "lastActivity"
     FROM portfolio_activity ORDER BY updated_at DESC LIMIT 500`);
   return result.rows as ActivityRecord[];
 });
