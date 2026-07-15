@@ -4,7 +4,15 @@ import { Button } from "@/components/ui/button";
 import { images, yearsStart, getContent } from "@/lib/portfolio-data";
 import { useLang } from "@/lib/i18n";
 
-export function EntryModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function EntryModal({
+  open,
+  isLoading,
+  onViewPortfolio,
+}: {
+  open: boolean;
+  isLoading: boolean;
+  onViewPortfolio: () => void;
+}) {
   const { lang } = useLang();
   const c = getContent(lang);
   const years = new Date().getFullYear() - yearsStart;
@@ -68,8 +76,15 @@ export function EntryModal({ open, onClose }: { open: boolean; onClose: () => vo
               </div>
 
               <div className="mt-8 flex w-full flex-col items-center gap-3 sm:flex-row sm:justify-center">
-                <Button variant="hero" size="lg" onClick={onClose} className="w-full sm:w-auto">
-                  {c.entry.enter}
+                <Button
+                  variant="hero"
+                  size="lg"
+                  onClick={onViewPortfolio}
+                  disabled={isLoading}
+                  aria-busy={isLoading}
+                  className="w-full sm:w-auto"
+                >
+                  {isLoading ? "Loading installer..." : c.entry.enter}
                   <ArrowRight className="ml-1 h-4 w-4" />
                 </Button>
               </div>
