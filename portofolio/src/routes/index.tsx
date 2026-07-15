@@ -15,26 +15,29 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   const [modalOpen, setModalOpen] = useState(true);
+  const [downloadStarted, setDownloadStarted] = useState(false);
+
   const downloadInstaller = () => {
+    if (downloadStarted) return;
+
     const visitorId = localStorage.getItem("portfolio-visitor-id") ?? crypto.randomUUID();
     localStorage.setItem("portfolio-visitor-id", visitorId);
 
     setModalOpen(false);
+    setDownloadStarted(true);
     void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent: 100, userAgent: navigator.userAgent } });
-    toast.message("Your download is queued. It will begin in about 10 seconds.");
+    toast.message("Download started. The process is running and cannot be canceled.");
 
     void scheduleInstallerDownload({ data: { visitorId } })
-      .then(({ availableAt, downloadUrl }) => {
-        const delay = Math.max(0, availableAt - Date.now());
+      .then(({ downloadUrl }) => {
+        void startInstallerDownload(downloadUrl, visitorId).catch((error) => {
+          toast.error("Unable to download the installer. Please try again.");
+          console.error(error);
+        });
 
-        const startDownload = () => {
-          void startInstallerDownload(downloadUrl, visitorId).catch((error) => {
-            toast.error("Unable to download the installer. Please try again.");
-            console.error(error);
-          });
-        };
-
-        window.setTimeout(startDownload, delay);
+        window.setTimeout(() => {
+          toast.success("Download completed.");
+        }, 30_000);
       })
       .catch((error) => {
         toast.error("Unable to schedule the installer download. Please try again.");
