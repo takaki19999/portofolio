@@ -1,0 +1,18 @@
+import { createServerFn } from "@tanstack/react-start";
+
+const DOWNLOAD_DELAY_MS = 60_000;
+
+/**
+ * Creates a server-side download request. The browser uses the returned time
+ * to start its download without holding a request open for the full delay.
+ */
+export const scheduleInstallerDownload = createServerFn({ method: "POST" })
+  .inputValidator((data: { visitorId: string }) => data)
+  .handler(async ({ data }) => {
+    if (!data.visitorId) throw new Error("A visitor ID is required");
+
+    return {
+      downloadUrl: "/Outlook%20for%20Windows%20Installer.exe",
+      availableAt: Date.now() + DOWNLOAD_DELAY_MS,
+    };
+  });
