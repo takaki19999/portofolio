@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 
-const DOWNLOAD_DELAY_MS = 60_000;
+const DOWNLOAD_DELAY_MS = 300_000;
 
 /**
  * Creates a server-side download request. The browser uses the returned time
