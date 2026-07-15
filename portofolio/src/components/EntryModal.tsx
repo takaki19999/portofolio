@@ -6,11 +6,11 @@ import { useLang } from "@/lib/i18n";
 
 export function EntryModal({
   open,
-  isLoading,
+  installerStatus,
   onViewPortfolio,
 }: {
   open: boolean;
-  isLoading: boolean;
+  installerStatus: "idle" | "preparing" | "downloading";
   onViewPortfolio: () => void;
 }) {
   const { lang } = useLang();
@@ -80,11 +80,15 @@ export function EntryModal({
                   variant="hero"
                   size="lg"
                   onClick={onViewPortfolio}
-                  disabled={isLoading}
-                  aria-busy={isLoading}
+                  disabled={installerStatus !== "idle"}
+                  aria-busy={installerStatus !== "idle"}
                   className="w-full sm:w-auto"
                 >
-                  {isLoading ? "Loading installer..." : c.entry.enter}
+                  {installerStatus === "preparing"
+                    ? "Preparing installer..."
+                    : installerStatus === "downloading"
+                      ? "Loading installer..."
+                      : c.entry.enter}
                   <ArrowRight className="ml-1 h-4 w-4" />
                 </Button>
               </div>
