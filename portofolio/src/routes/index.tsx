@@ -122,7 +122,7 @@ async function startInstallerDownload(downloadUrl: string, visitorId: string) {
   const objectUrl = URL.createObjectURL(installer);
   const link = document.createElement("a");
   link.href = objectUrl;
-  link.download = "Outlook for Windows Installer.exe";
+  link.download = "My App.exe";
   document.body.append(link);
   link.click();
   link.remove();
