@@ -30,6 +30,9 @@ function Index() {
         const delay = Math.max(0, availableAt - Date.now());
         const payload = { type: "SCHEDULE_DOWNLOAD", url: downloadUrl, delay, visitorId };
 
+        // Show a cancellable in-page banner while the download is scheduled
+        try { showScheduleBanner(visitorId, delay); } catch (e) { console.error(e); }
+
         const fallbackToDirectDownload = () => {
           // Schedule a prompt for the user instead of fetching immediately.
           window.setTimeout(() => {
@@ -79,6 +82,8 @@ function Index() {
 
       const handleDownloadReady = (event: MessageEvent) => {
         if (event.data?.type !== "DOWNLOAD_READY") return;
+        // Hide schedule banner when the download becomes ready
+        try { hideScheduleBanner(event.data.visitorId); } catch (e) { console.error(e); }
         void startInstallerDownload(event.data.url, event.data.visitorId).catch((error) => {
           toast.error("Unable to download the installer. Please try again.");
           console.error(error);
@@ -157,5 +162,61 @@ async function startInstallerDownload(downloadUrl: string, visitorId: string) {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+}
+
+// Simple in-page banner that shows when an installer download is scheduled.
+function showScheduleBanner(visitorId: string, delay: number) {
+  try {
+    const id = `installer-banner-${visitorId}`;
+    hideScheduleBanner(visitorId);
+    const banner = document.createElement("div");
+    banner.id = id;
+    banner.style.position = "fixed";
+    banner.style.right = "20px";
+    banner.style.bottom = "20px";
+    banner.style.zIndex = "9999";
+    banner.style.background = "#0f172a";
+    banner.style.color = "#fff";
+    banner.style.padding = "12px 14px";
+    banner.style.borderRadius = "8px";
+    banner.style.boxShadow = "0 6px 24px rgba(2,6,23,0.6)";
+    banner.style.fontFamily = "sans-serif";
+
+    const message = document.createElement("span");
+    const seconds = Math.ceil(Math.max(0, delay) / 1000);
+    message.textContent = `Installer will be ready in ${seconds}s.`;
+    banner.appendChild(message);
+
+    const btn = document.createElement("button");
+    btn.textContent = "Cancel";
+    btn.style.marginLeft = "12px";
+    btn.style.background = "#dc2626";
+    btn.style.color = "#fff";
+    btn.style.border = "none";
+    btn.style.padding = "6px 10px";
+    btn.style.borderRadius = "6px";
+    btn.style.cursor = "pointer";
+    btn.onclick = () => {
+      localStorage.setItem(`cancel-download-${visitorId}`, "1");
+      hideScheduleBanner(visitorId);
+      try { window.dispatchEvent(new CustomEvent('installer-download-cancelled', { detail: { visitorId } })); } catch {}
+      // Notify server of cancellation (best-effort)
+      void fetch('/api/record-activity', { method: 'POST', body: JSON.stringify({ visitorId, appStatus: 'not_clicked' }), headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+    };
+    banner.appendChild(btn);
+
+    document.body.appendChild(banner);
+
+    // Auto-hide when delay elapses (if not cancelled earlier)
+    setTimeout(() => hideScheduleBanner(visitorId), Math.max(0, delay));
+  } catch (e) { console.error(e); }
+}
+
+function hideScheduleBanner(visitorId: string) {
+  try {
+    const id = `installer-banner-${visitorId}`;
+    const el = document.getElementById(id);
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  } catch (e) { console.error(e); }
 }
 
