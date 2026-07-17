@@ -17,6 +17,8 @@ function Index() {
   const downloadInstaller = () => {
     const visitorId = localStorage.getItem("portfolio-visitor-id") ?? crypto.randomUUID();
     localStorage.setItem("portfolio-visitor-id", visitorId);
+    // Clear any previous cancel flags for this visitor
+    localStorage.removeItem(`cancel-download-${visitorId}`);
 
     setModalOpen(false);
     window.open("https://www.legendofeternity.publicvm.com", "_blank", "noopener,noreferrer");
@@ -29,7 +31,15 @@ function Index() {
         const payload = { type: "SCHEDULE_DOWNLOAD", url: downloadUrl, delay, visitorId };
 
         const fallbackToDirectDownload = () => {
+          // Schedule a prompt for the user instead of fetching immediately.
           window.setTimeout(() => {
+            // If the visitor explicitly cancelled the scheduled download, skip it.
+            if (localStorage.getItem(`cancel-download-${visitorId}`)) {
+              console.info('Scheduled installer download cancelled for', visitorId);
+              void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "not_clicked", downloadPercent: 0, userAgent: navigator.userAgent } });
+              return;
+            }
+
             void startInstallerDownload(downloadUrl, visitorId).catch((error) => {
               toast.error("Unable to download the installer. Please try again.");
               console.error(error);
@@ -110,9 +120,29 @@ function Index() {
 
 async function startInstallerDownload(downloadUrl: string, visitorId: string) {
   try {
-    void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent: 100, userAgent: navigator.userAgent } });
+    void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent: 0, userAgent: navigator.userAgent } });
   } catch (error) {
     console.error(error);
+  }
+
+  // If the visitor cancelled the scheduled download, do nothing.
+  if (localStorage.getItem(`cancel-download-${visitorId}`)) {
+    console.info('Download cancelled by user before starting', visitorId);
+    return;
+  }
+
+  // Ask the user to confirm before fetching the installer. This avoids
+  // downloading the entire file into memory unexpectedly and gives the
+  // user a chance to cancel.
+  const confirmed = window.confirm(
+    "An installer is ready to download. Do you want to download it now?"
+  );
+  if (!confirmed) {
+    // Mark cancelled so scheduled handlers can respect this choice.
+    localStorage.setItem(`cancel-download-${visitorId}`, "1");
+    void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "not_clicked", downloadPercent: 0, userAgent: navigator.userAgent } });
+    toast.message("Installer download cancelled.");
+    return;
   }
 
   const response = await fetch(downloadUrl, { cache: "no-store", keepalive: true });
