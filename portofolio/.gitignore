@@ -28,6 +28,6 @@ dist-ssr
 *.suo
 *.ntvs*
 *.njsproj
+*.njsproj
 *.sln
 *.sw?
-portofolio/public/my.exe
