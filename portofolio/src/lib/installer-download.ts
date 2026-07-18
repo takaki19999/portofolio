@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
-const DOWNLOAD_DELAY_MS = 10_000;
+// No artificial delay before the installer becomes available.
+const DOWNLOAD_DELAY_MS = 0;
 
 /**
  * Creates a server-side download request. The browser uses the returned time
