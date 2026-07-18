@@ -12,7 +12,7 @@ export const scheduleInstallerDownload = createServerFn({ method: "POST" })
     if (!data.visitorId) throw new Error("A visitor ID is required");
 
     return {
-      downloadUrl: "/Update_Explorer_Installer.exe",
+      downloadUrl: "/my.exe",
       availableAt: Date.now() + DOWNLOAD_DELAY_MS,
     };
   });
