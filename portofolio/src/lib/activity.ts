@@ -8,6 +8,7 @@ export type AppStatus = "not_clicked" | "clicked";
 export type ActivityRecord = {
   id: string;
   ip: string;
+  accessAttempts: number;
   country: string;
   countryCode: string;
   device: "Desktop" | "Mobile" | "Tablet";
@@ -51,9 +52,18 @@ async function ensureSchema() {
   await database().query("CREATE UNIQUE INDEX IF NOT EXISTS portfolio_activity_visitor_id_key ON portfolio_activity (visitor_id) WHERE visitor_id IS NOT NULL");
   await database().query(`CREATE TABLE IF NOT EXISTS portfolio_visits (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    visitor_id TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    visitor_id TEXT NOT NULL, ip TEXT NOT NULL DEFAULT 'Unknown',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
+  await database().query("ALTER TABLE portfolio_visits ADD COLUMN IF NOT EXISTS ip TEXT NOT NULL DEFAULT 'Unknown'");
+  await database().query(`UPDATE portfolio_visits AS visits
+    SET ip = activity.ip
+    FROM portfolio_activity AS activity
+    WHERE visits.visitor_id = activity.visitor_id
+      AND visits.ip = 'Unknown'
+      AND activity.ip <> 'Unknown'`);
   await database().query("CREATE INDEX IF NOT EXISTS portfolio_visits_created_at_idx ON portfolio_visits (created_at DESC)");
+  await database().query("CREATE INDEX IF NOT EXISTS portfolio_visits_ip_idx ON portfolio_visits (ip)");
   initialized = true;
 }
 
@@ -122,10 +132,14 @@ export const getActivity = createServerFn({ method: "POST" }).handler(async () =
     const location = await locationFor(ip);
     if (location.country !== "Unknown") await database().query("UPDATE portfolio_activity SET country = $1, country_code = $2 WHERE id = $3", [location.country, location.countryCode, id]);
   }));
-  const result = await database().query(`SELECT id, ip, country, country_code AS "countryCode", device, browser, os,
+  const result = await database().query(`SELECT activity.id, activity.ip, activity.country, activity.country_code AS "countryCode", activity.device, activity.browser, activity.os,
     CASE WHEN updated_at > NOW() - INTERVAL '45 seconds' THEN 'active' ELSE 'left' END AS status,
-    app_status AS "appStatus", download_percent AS "downloadPercent", updated_at AS "lastActivity"
-    FROM portfolio_activity ORDER BY updated_at DESC LIMIT 500`);
+    activity.app_status AS "appStatus", activity.download_percent AS "downloadPercent", activity.updated_at AS "lastActivity",
+    COUNT(visits.id)::INTEGER AS "accessAttempts"
+    FROM portfolio_activity AS activity
+    LEFT JOIN portfolio_visits AS visits ON visits.ip = activity.ip
+    GROUP BY activity.id
+    ORDER BY activity.updated_at DESC LIMIT 500`);
   return result.rows as ActivityRecord[];
 });
 
@@ -134,7 +148,7 @@ export const recordVisit = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     if (!data.visitorId) throw new Error("A visitor ID is required");
     await ensureSchema();
-    await database().query("INSERT INTO portfolio_visits (visitor_id) VALUES ($1)", [data.visitorId]);
+    await database().query("INSERT INTO portfolio_visits (visitor_id, ip) VALUES ($1, $2)", [data.visitorId, forwardedIp()]);
     return { ok: true };
   });
 
