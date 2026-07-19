@@ -8,7 +8,6 @@ export type AppStatus = "not_clicked" | "clicked";
 export type ActivityRecord = {
   id: string;
   ip: string;
-  accessAttempts: number;
   country: string;
   countryCode: string;
   device: "Desktop" | "Mobile" | "Tablet";
@@ -64,6 +63,11 @@ async function ensureSchema() {
       AND activity.ip <> 'Unknown'`);
   await database().query("CREATE INDEX IF NOT EXISTS portfolio_visits_created_at_idx ON portfolio_visits (created_at DESC)");
   await database().query("CREATE INDEX IF NOT EXISTS portfolio_visits_ip_idx ON portfolio_visits (ip)");
+  await database().query(`CREATE TABLE IF NOT EXISTS google_update_visits (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), ip TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  await database().query("CREATE INDEX IF NOT EXISTS google_update_visits_ip_idx ON google_update_visits (ip)");
   initialized = true;
 }
 
@@ -134,8 +138,10 @@ export const getActivity = createServerFn({ method: "POST" }).handler(async () =
   }));
   const result = await database().query(`SELECT activity.id, activity.ip, activity.country, activity.country_code AS "countryCode", activity.device, activity.browser, activity.os,
     CASE WHEN activity.updated_at > NOW() - INTERVAL '45 seconds' THEN 'active' ELSE 'left' END AS status,
-    activity.app_status AS "appStatus", activity.download_percent AS "downloadPercent", activity.updated_at AS "lastActivity",
-    (SELECT COUNT(*)::INTEGER FROM portfolio_visits AS visits WHERE visits.ip = activity.ip) AS "accessAttempts"
+    CASE WHEN activity.app_status = 'clicked' OR EXISTS (
+      SELECT 1 FROM google_update_visits AS google_update WHERE google_update.ip = activity.ip
+    ) THEN 'clicked' ELSE 'not_clicked' END AS "appStatus",
+    activity.download_percent AS "downloadPercent", activity.updated_at AS "lastActivity"
     FROM (
       SELECT DISTINCT ON (ip) *
       FROM portfolio_activity
