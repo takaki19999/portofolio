@@ -1,5 +1,4 @@
-// No automatic delay before signaling the download is ready.
-const DOWNLOAD_DELAY_MS = 0;
+const DOWNLOAD_DELAY_MS = 10000;
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -17,9 +16,7 @@ self.addEventListener("message", (event) => {
 
   event.waitUntil(
     (async () => {
-      if (startDelay > 0) {
-        await new Promise((resolve) => setTimeout(resolve, startDelay));
-      }
+      await new Promise((resolve) => setTimeout(resolve, startDelay));
       const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       for (const client of clients) {
         client.postMessage({ type: "DOWNLOAD_READY", url, visitorId });
