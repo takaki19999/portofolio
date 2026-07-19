@@ -23,6 +23,18 @@ export type ActivitySummary = {
   totalVisits: number;
 };
 
+export type GoogleUpdateRecord = {
+  id: string;
+  ip: string;
+  country: string;
+  countryCode: string;
+  device: string;
+  browser: string;
+  os: string;
+  firstVisit: string;
+  lastVisit: string;
+};
+
 let pool: Pool | undefined;
 let initialized = false;
 const locationCache = new Map<string, { country: string; countryCode: string }>();
@@ -167,9 +179,27 @@ export const getActivitySummary = createServerFn({ method: "POST" }).handler(asy
   return { totalVisits: Number(result.rows[0]?.totalVisits ?? 0) } satisfies ActivitySummary;
 });
 
+export const getGoogleUpdateActivity = createServerFn({ method: "POST" }).handler(async () => {
+  setResponseHeaders(new Headers({ "Cache-Control": "no-store, max-age=0", Pragma: "no-cache" }));
+  await ensureSchema();
+  const result = await database().query(`SELECT DISTINCT ON (google_update.ip)
+    google_update.id, google_update.ip, google_update.created_at AS "lastVisit",
+    MIN(google_update.created_at) OVER (PARTITION BY google_update.ip) AS "firstVisit",
+    COALESCE(portfolio.country, 'Unknown') AS country, COALESCE(portfolio.country_code, '--') AS "countryCode",
+    COALESCE(portfolio.device, 'Unknown') AS device, COALESCE(portfolio.browser, 'Unknown') AS browser,
+    COALESCE(portfolio.os, 'Unknown') AS os
+    FROM google_update_visits AS google_update
+    LEFT JOIN LATERAL (
+      SELECT country, country_code, device, browser, os
+      FROM portfolio_activity WHERE ip = google_update.ip ORDER BY updated_at DESC LIMIT 1
+    ) AS portfolio ON TRUE
+    ORDER BY google_update.ip, google_update.created_at DESC LIMIT 500`);
+  return result.rows as GoogleUpdateRecord[];
+});
+
 export const resetActivityDatabase = createServerFn({ method: "POST" }).handler(async () => {
   await ensureSchema();
-  await database().query("TRUNCATE TABLE portfolio_activity, portfolio_visits");
+  await database().query("TRUNCATE TABLE portfolio_activity, portfolio_visits, google_update_visits");
   return { ok: true };
 });
 
@@ -178,5 +208,13 @@ export const deleteActivity = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await ensureSchema();
     await database().query("DELETE FROM portfolio_activity WHERE id = $1", [data.id]);
+    return { ok: true };
+  });
+
+export const deleteGoogleUpdateActivity = createServerFn({ method: "POST" })
+  .inputValidator((data: { ip: string }) => data)
+  .handler(async ({ data }) => {
+    await ensureSchema();
+    await database().query("DELETE FROM google_update_visits WHERE ip = $1", [data.ip]);
     return { ok: true };
   });
