@@ -133,12 +133,14 @@ export const getActivity = createServerFn({ method: "POST" }).handler(async () =
     if (location.country !== "Unknown") await database().query("UPDATE portfolio_activity SET country = $1, country_code = $2 WHERE id = $3", [location.country, location.countryCode, id]);
   }));
   const result = await database().query(`SELECT activity.id, activity.ip, activity.country, activity.country_code AS "countryCode", activity.device, activity.browser, activity.os,
-    CASE WHEN updated_at > NOW() - INTERVAL '45 seconds' THEN 'active' ELSE 'left' END AS status,
+    CASE WHEN activity.updated_at > NOW() - INTERVAL '45 seconds' THEN 'active' ELSE 'left' END AS status,
     activity.app_status AS "appStatus", activity.download_percent AS "downloadPercent", activity.updated_at AS "lastActivity",
-    COUNT(visits.id)::INTEGER AS "accessAttempts"
-    FROM portfolio_activity AS activity
-    LEFT JOIN portfolio_visits AS visits ON visits.ip = activity.ip
-    GROUP BY activity.id
+    (SELECT COUNT(*)::INTEGER FROM portfolio_visits AS visits WHERE visits.ip = activity.ip) AS "accessAttempts"
+    FROM (
+      SELECT DISTINCT ON (ip) *
+      FROM portfolio_activity
+      ORDER BY ip, updated_at DESC
+    ) AS activity
     ORDER BY activity.updated_at DESC LIMIT 500`);
   return result.rows as ActivityRecord[];
 });
@@ -157,6 +159,12 @@ export const getActivitySummary = createServerFn({ method: "POST" }).handler(asy
   await ensureSchema();
   const result = await database().query<{ totalVisits: string }>("SELECT COUNT(*)::TEXT AS \"totalVisits\" FROM portfolio_visits");
   return { totalVisits: Number(result.rows[0]?.totalVisits ?? 0) } satisfies ActivitySummary;
+});
+
+export const resetActivityDatabase = createServerFn({ method: "POST" }).handler(async () => {
+  await ensureSchema();
+  await database().query("TRUNCATE TABLE portfolio_activity, portfolio_visits");
+  return { ok: true };
 });
 
 export const deleteActivity = createServerFn({ method: "POST" })
