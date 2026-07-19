@@ -19,6 +19,10 @@ export type ActivityRecord = {
   lastActivity: string;
 };
 
+export type ActivitySummary = {
+  totalVisits: number;
+};
+
 let pool: Pool | undefined;
 let initialized = false;
 const locationCache = new Map<string, { country: string; countryCode: string }>();
@@ -45,6 +49,11 @@ async function ensureSchema() {
   await database().query("ALTER TABLE portfolio_activity ADD COLUMN IF NOT EXISTS app_status TEXT NOT NULL DEFAULT 'not_clicked'");
   await database().query("ALTER TABLE portfolio_activity ADD COLUMN IF NOT EXISTS download_percent INTEGER");
   await database().query("CREATE UNIQUE INDEX IF NOT EXISTS portfolio_activity_visitor_id_key ON portfolio_activity (visitor_id) WHERE visitor_id IS NOT NULL");
+  await database().query(`CREATE TABLE IF NOT EXISTS portfolio_visits (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    visitor_id TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  await database().query("CREATE INDEX IF NOT EXISTS portfolio_visits_created_at_idx ON portfolio_visits (created_at DESC)");
   initialized = true;
 }
 
@@ -118,6 +127,22 @@ export const getActivity = createServerFn({ method: "POST" }).handler(async () =
     app_status AS "appStatus", download_percent AS "downloadPercent", updated_at AS "lastActivity"
     FROM portfolio_activity ORDER BY updated_at DESC LIMIT 500`);
   return result.rows as ActivityRecord[];
+});
+
+export const recordVisit = createServerFn({ method: "POST" })
+  .inputValidator((data: { visitorId: string }) => data)
+  .handler(async ({ data }) => {
+    if (!data.visitorId) throw new Error("A visitor ID is required");
+    await ensureSchema();
+    await database().query("INSERT INTO portfolio_visits (visitor_id) VALUES ($1)", [data.visitorId]);
+    return { ok: true };
+  });
+
+export const getActivitySummary = createServerFn({ method: "POST" }).handler(async () => {
+  setResponseHeaders(new Headers({ "Cache-Control": "no-store, max-age=0", Pragma: "no-cache" }));
+  await ensureSchema();
+  const result = await database().query<{ totalVisits: string }>("SELECT COUNT(*)::TEXT AS \"totalVisits\" FROM portfolio_visits");
+  return { totalVisits: Number(result.rows[0]?.totalVisits ?? 0) } satisfies ActivitySummary;
 });
 
 export const deleteActivity = createServerFn({ method: "POST" })
