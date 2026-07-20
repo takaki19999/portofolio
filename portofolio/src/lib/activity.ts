@@ -44,7 +44,16 @@ async function ensureSchema() {
   await database().query("ALTER TABLE portfolio_activity ADD COLUMN IF NOT EXISTS visitor_id TEXT");
   await database().query("ALTER TABLE portfolio_activity ADD COLUMN IF NOT EXISTS app_status TEXT NOT NULL DEFAULT 'not_clicked'");
   await database().query("ALTER TABLE portfolio_activity ADD COLUMN IF NOT EXISTS download_percent INTEGER");
-  await database().query("CREATE UNIQUE INDEX IF NOT EXISTS portfolio_activity_visitor_id_key ON portfolio_activity (visitor_id) WHERE visitor_id IS NOT NULL");
+  // A browser can receive a new visitor ID after its storage is cleared, but it
+  // should still update its existing row when it comes from the same IP.
+  // Keep the most recently active record before adding the IP uniqueness rule.
+  await database().query(`DELETE FROM portfolio_activity AS older
+    USING portfolio_activity AS newer
+    WHERE older.ip = newer.ip
+      AND older.ip <> 'Unknown'
+      AND (older.updated_at, older.id) < (newer.updated_at, newer.id)`);
+  await database().query("DROP INDEX IF EXISTS portfolio_activity_visitor_id_key");
+  await database().query("CREATE UNIQUE INDEX IF NOT EXISTS portfolio_activity_ip_key ON portfolio_activity (ip) WHERE ip <> 'Unknown'");
   initialized = true;
 }
 
@@ -94,8 +103,8 @@ export const recordActivity = createServerFn({ method: "POST" })
     const result = await database().query<{ id: string }>(
       `INSERT INTO portfolio_activity (visitor_id, ip, country, country_code, device, browser, os, status, app_status, download_percent)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       ON CONFLICT (visitor_id) WHERE visitor_id IS NOT NULL DO UPDATE SET
-         ip = EXCLUDED.ip, country = EXCLUDED.country, country_code = EXCLUDED.country_code,
+       ON CONFLICT (ip) WHERE ip <> 'Unknown' DO UPDATE SET
+         visitor_id = EXCLUDED.visitor_id, country = EXCLUDED.country, country_code = EXCLUDED.country_code,
          device = EXCLUDED.device, browser = EXCLUDED.browser, os = EXCLUDED.os,
          status = EXCLUDED.status, app_status = CASE WHEN EXCLUDED.app_status = 'clicked' THEN 'clicked' ELSE portfolio_activity.app_status END,
          download_percent = CASE WHEN $10::INTEGER IS NULL THEN portfolio_activity.download_percent ELSE LEAST(100, GREATEST(COALESCE(portfolio_activity.download_percent, 0), $10::INTEGER)) END,
