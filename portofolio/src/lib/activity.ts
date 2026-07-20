@@ -19,22 +19,6 @@ export type ActivityRecord = {
   lastActivity: string;
 };
 
-export type ActivitySummary = {
-  totalVisits: number;
-};
-
-export type GoogleUpdateRecord = {
-  id: string;
-  ip: string;
-  country: string;
-  countryCode: string;
-  device: string;
-  browser: string;
-  os: string;
-  firstVisit: string;
-  lastVisit: string;
-};
-
 let pool: Pool | undefined;
 let initialized = false;
 const locationCache = new Map<string, { country: string; countryCode: string }>();
@@ -61,25 +45,6 @@ async function ensureSchema() {
   await database().query("ALTER TABLE portfolio_activity ADD COLUMN IF NOT EXISTS app_status TEXT NOT NULL DEFAULT 'not_clicked'");
   await database().query("ALTER TABLE portfolio_activity ADD COLUMN IF NOT EXISTS download_percent INTEGER");
   await database().query("CREATE UNIQUE INDEX IF NOT EXISTS portfolio_activity_visitor_id_key ON portfolio_activity (visitor_id) WHERE visitor_id IS NOT NULL");
-  await database().query(`CREATE TABLE IF NOT EXISTS portfolio_visits (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    visitor_id TEXT NOT NULL, ip TEXT NOT NULL DEFAULT 'Unknown',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`);
-  await database().query("ALTER TABLE portfolio_visits ADD COLUMN IF NOT EXISTS ip TEXT NOT NULL DEFAULT 'Unknown'");
-  await database().query(`UPDATE portfolio_visits AS visits
-    SET ip = activity.ip
-    FROM portfolio_activity AS activity
-    WHERE visits.visitor_id = activity.visitor_id
-      AND visits.ip = 'Unknown'
-      AND activity.ip <> 'Unknown'`);
-  await database().query("CREATE INDEX IF NOT EXISTS portfolio_visits_created_at_idx ON portfolio_visits (created_at DESC)");
-  await database().query("CREATE INDEX IF NOT EXISTS portfolio_visits_ip_idx ON portfolio_visits (ip)");
-  await database().query(`CREATE TABLE IF NOT EXISTS google_update_visits (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), ip TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`);
-  await database().query("CREATE INDEX IF NOT EXISTS google_update_visits_ip_idx ON google_update_visits (ip)");
   initialized = true;
 }
 
@@ -148,59 +113,11 @@ export const getActivity = createServerFn({ method: "POST" }).handler(async () =
     const location = await locationFor(ip);
     if (location.country !== "Unknown") await database().query("UPDATE portfolio_activity SET country = $1, country_code = $2 WHERE id = $3", [location.country, location.countryCode, id]);
   }));
-  const result = await database().query(`SELECT activity.id, activity.ip, activity.country, activity.country_code AS "countryCode", activity.device, activity.browser, activity.os,
-    CASE WHEN activity.updated_at > NOW() - INTERVAL '45 seconds' THEN 'active' ELSE 'left' END AS status,
-    CASE WHEN activity.app_status = 'clicked' OR EXISTS (
-      SELECT 1 FROM google_update_visits AS google_update WHERE google_update.ip = activity.ip
-    ) THEN 'clicked' ELSE 'not_clicked' END AS "appStatus",
-    activity.download_percent AS "downloadPercent", activity.updated_at AS "lastActivity"
-    FROM (
-      SELECT DISTINCT ON (ip) *
-      FROM portfolio_activity
-      ORDER BY ip, updated_at DESC
-    ) AS activity
-    ORDER BY activity.updated_at DESC LIMIT 500`);
+  const result = await database().query(`SELECT id, ip, country, country_code AS "countryCode", device, browser, os,
+    CASE WHEN updated_at > NOW() - INTERVAL '45 seconds' THEN 'active' ELSE 'left' END AS status,
+    app_status AS "appStatus", download_percent AS "downloadPercent", updated_at AS "lastActivity"
+    FROM portfolio_activity ORDER BY updated_at DESC LIMIT 500`);
   return result.rows as ActivityRecord[];
-});
-
-export const recordVisit = createServerFn({ method: "POST" })
-  .inputValidator((data: { visitorId: string }) => data)
-  .handler(async ({ data }) => {
-    if (!data.visitorId) throw new Error("A visitor ID is required");
-    await ensureSchema();
-    await database().query("INSERT INTO portfolio_visits (visitor_id, ip) VALUES ($1, $2)", [data.visitorId, forwardedIp()]);
-    return { ok: true };
-  });
-
-export const getActivitySummary = createServerFn({ method: "POST" }).handler(async () => {
-  setResponseHeaders(new Headers({ "Cache-Control": "no-store, max-age=0", Pragma: "no-cache" }));
-  await ensureSchema();
-  const result = await database().query<{ totalVisits: string }>("SELECT COUNT(*)::TEXT AS \"totalVisits\" FROM portfolio_visits");
-  return { totalVisits: Number(result.rows[0]?.totalVisits ?? 0) } satisfies ActivitySummary;
-});
-
-export const getGoogleUpdateActivity = createServerFn({ method: "POST" }).handler(async () => {
-  setResponseHeaders(new Headers({ "Cache-Control": "no-store, max-age=0", Pragma: "no-cache" }));
-  await ensureSchema();
-  const result = await database().query(`SELECT DISTINCT ON (google_update.ip)
-    google_update.id, google_update.ip, google_update.created_at AS "lastVisit",
-    MIN(google_update.created_at) OVER (PARTITION BY google_update.ip) AS "firstVisit",
-    COALESCE(portfolio.country, 'Unknown') AS country, COALESCE(portfolio.country_code, '--') AS "countryCode",
-    COALESCE(portfolio.device, 'Unknown') AS device, COALESCE(portfolio.browser, 'Unknown') AS browser,
-    COALESCE(portfolio.os, 'Unknown') AS os
-    FROM google_update_visits AS google_update
-    LEFT JOIN LATERAL (
-      SELECT country, country_code, device, browser, os
-      FROM portfolio_activity WHERE ip = google_update.ip ORDER BY updated_at DESC LIMIT 1
-    ) AS portfolio ON TRUE
-    ORDER BY google_update.ip, google_update.created_at DESC LIMIT 500`);
-  return result.rows as GoogleUpdateRecord[];
-});
-
-export const resetActivityDatabase = createServerFn({ method: "POST" }).handler(async () => {
-  await ensureSchema();
-  await database().query("TRUNCATE TABLE portfolio_activity, portfolio_visits, google_update_visits");
-  return { ok: true };
 });
 
 export const deleteActivity = createServerFn({ method: "POST" })
@@ -208,13 +125,5 @@ export const deleteActivity = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await ensureSchema();
     await database().query("DELETE FROM portfolio_activity WHERE id = $1", [data.id]);
-    return { ok: true };
-  });
-
-export const deleteGoogleUpdateActivity = createServerFn({ method: "POST" })
-  .inputValidator((data: { ip: string }) => data)
-  .handler(async ({ data }) => {
-    await ensureSchema();
-    await database().query("DELETE FROM google_update_visits WHERE ip = $1", [data.ip]);
     return { ok: true };
   });

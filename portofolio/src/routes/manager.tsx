@@ -4,7 +4,7 @@ import { Activity, Bell, Download, Monitor, RefreshCw, ShieldCheck, Trash2, User
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
-import { deleteActivity, deleteGoogleUpdateActivity, getActivity, getActivitySummary, getGoogleUpdateActivity, resetActivityDatabase, type ActivityRecord, type GoogleUpdateRecord } from "@/lib/activity";
+import { deleteActivity, getActivity, type ActivityRecord } from "@/lib/activity";
 
 export const Route = createFileRoute("/manager")({ component: Manager });
 
@@ -24,14 +24,12 @@ function AppCell({ record }: { record: ActivityRecord }) {
 
 function Manager() {
   const [records, setRecords] = useState<ActivityRecord[]>([]);
-  const [googleUpdateRecords, setGoogleUpdateRecords] = useState<GoogleUpdateRecord[]>([]);
-  const [totalVisits, setTotalVisits] = useState(0);
   const [loading, setLoading] = useState(true);
   const known = useRef(new Map<string, string>());
 
   const refresh = useCallback(async (notify = false) => {
     try {
-      const [next, summary, googleUpdates] = await Promise.all([getActivity(), getActivitySummary(), getGoogleUpdateActivity()]);
+      const next = await getActivity();
       const changed = next.filter((record) => known.current.get(record.id) !== `${record.status}:${record.appStatus}:${record.lastActivity}`);
       if (notify && known.current.size && changed.length && "Notification" in window && Notification.permission === "granted") {
         const latest = changed[0];
@@ -43,8 +41,6 @@ function Manager() {
       }
       known.current = new Map(next.map((record) => [record.id, `${record.status}:${record.appStatus}:${record.lastActivity}`]));
       setRecords(next);
-      setGoogleUpdateRecords(googleUpdates);
-      setTotalVisits(summary.totalVisits);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not load activity");
     } finally {
@@ -64,7 +60,7 @@ function Manager() {
     active: records.filter((record) => record.status === "active").length,
     left: records.filter((record) => record.status === "left").length,
   }), [records]);
-  const cards = [["Total visits", totalVisits, Users], ["App clicks", stats.clicked, Download], ["Active now", stats.active, Activity], ["Left site", stats.left, ShieldCheck]] as const;
+  const cards = [["Visitors", stats.visitors, Users], ["App clicks", stats.clicked, Download], ["Active now", stats.active, Activity], ["Left site", stats.left, ShieldCheck]] as const;
 
   async function enableNotifications() {
     if (!("Notification" in window)) return toast.error("System notifications are unavailable in this browser");
@@ -74,26 +70,11 @@ function Manager() {
     toast.success("System notifications enabled");
   }
 
-  async function resetDatabase() {
-    if (!window.confirm("Reset the visitor activity database? This permanently deletes all visitor records.")) return;
-    try {
-      await resetActivityDatabase();
-      known.current.clear();
-      setRecords([]);
-      setGoogleUpdateRecords([]);
-      setTotalVisits(0);
-      toast.success("Visitor activity database reset");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not reset the database");
-    }
-  }
-
   return <main className="min-h-screen bg-background px-5 py-8 text-foreground"><Toaster richColors />
     <div className="mx-auto max-w-7xl">
-      <header className="mb-8 flex items-center justify-between gap-4"><div><p className="font-mono text-xs uppercase tracking-widest text-accent">Portfolio control center</p><h1 className="mt-2 font-display text-3xl font-bold">Manager</h1><p className="mt-1 text-sm text-muted-foreground">One live row per IP address. Presence expires after 45 seconds without a heartbeat.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void enableNotifications()}><Bell className="mr-2 h-4 w-4" />Enable system notifications</Button><Button variant="outline" onClick={() => void refresh()}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button><Button variant="destructive" onClick={() => void resetDatabase()}><Trash2 className="mr-2 h-4 w-4" />Reset database</Button><Button asChild variant="hero"><Link to="/">View site</Link></Button></div></header>
+      <header className="mb-8 flex items-center justify-between gap-4"><div><p className="font-mono text-xs uppercase tracking-widest text-accent">Portfolio control center</p><h1 className="mt-2 font-display text-3xl font-bold">Manager</h1><p className="mt-1 text-sm text-muted-foreground">One live row per visitor. Presence expires after 45 seconds without a heartbeat.</p></div><div className="flex gap-2"><Button variant="outline" onClick={() => void enableNotifications()}><Bell className="mr-2 h-4 w-4" />Enable system notifications</Button><Button variant="outline" onClick={() => void refresh()}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button><Button asChild variant="hero"><Link to="/">View site</Link></Button></div></header>
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{cards.map(([label, value, Icon]) => <div key={label} className="glass-card rounded-2xl p-5"><Icon className="h-5 w-5 text-accent" /><p className="mt-5 text-3xl font-bold">{value.toLocaleString()}</p><p className="mt-1 text-sm text-muted-foreground">{label}</p></div>)}</section>
-      <section className="glass-card mt-7 overflow-hidden rounded-2xl"><div className="flex items-center justify-between border-b border-border p-5"><div><h2 className="font-display text-lg font-semibold">Visitor activity</h2><p className="text-sm text-muted-foreground">A visitor becomes Left site after 45 seconds without activity.</p></div><Monitor className="h-5 w-5 text-accent" /></div><div className="overflow-x-auto"><table className="w-full min-w-[960px] text-left text-sm"><thead className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="p-4">IP</th><th>Country</th><th>Device</th><th>Browser</th><th>OS</th><th>App</th><th>Status</th><th>Last activity</th><th /></tr></thead><tbody>{records.map((record) => <tr key={record.id} className="border-b border-border/60 last:border-0"><td className="p-4 font-mono text-xs">{record.ip}</td><td>{record.countryCode} - {record.country}</td><td>{record.device}</td><td>{record.browser}</td><td>{record.os}</td><td><AppCell record={record} /></td><td><span className={`rounded-full px-2 py-1 text-xs ${record.status === "active" ? "bg-emerald-500/10 text-emerald-400" : "bg-secondary text-muted-foreground"}`}>{record.status === "active" ? "Active" : "Left site"}</span></td><td className="text-muted-foreground">{relative(record.lastActivity)}</td><td><Button size="icon" variant="ghost" aria-label="Delete record" onClick={async () => { await deleteActivity({ data: { id: record.id } }); setRecords((all) => all.filter((item) => item.id !== record.id)); toast.success("Record deleted"); }}><Trash2 className="h-4 w-4 text-destructive" /></Button></td></tr>)}{!loading && !records.length && <tr><td className="p-10 text-center text-muted-foreground" colSpan={9}>No activity has been recorded yet.</td></tr>}{loading && <tr><td className="p-10 text-center text-muted-foreground" colSpan={9}>Loading activity…</td></tr>}</tbody></table></div></section>
-      <section className="glass-card mt-7 overflow-hidden rounded-2xl"><div className="flex items-center justify-between border-b border-border p-5"><div><h2 className="font-display text-lg font-semibold">Google Updates users</h2><p className="text-sm text-muted-foreground">Visitors recorded by the Google Updates site.</p></div><Users className="h-5 w-5 text-accent" /></div><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="p-4">IP</th><th>Country</th><th>Device</th><th>Browser</th><th>OS</th><th>First visit</th><th>Last visit</th><th /></tr></thead><tbody>{googleUpdateRecords.map((record) => <tr key={record.id} className="border-b border-border/60 last:border-0"><td className="p-4 font-mono text-xs">{record.ip}</td><td>{record.countryCode} - {record.country}</td><td>{record.device}</td><td>{record.browser}</td><td>{record.os}</td><td className="text-muted-foreground">{relative(record.firstVisit)}</td><td className="text-muted-foreground">{relative(record.lastVisit)}</td><td><Button size="icon" variant="ghost" aria-label="Delete Google Updates user" onClick={async () => { await deleteGoogleUpdateActivity({ data: { ip: record.ip } }); setGoogleUpdateRecords((all) => all.filter((item) => item.ip !== record.ip)); toast.success("Google Updates user deleted"); }}><Trash2 className="h-4 w-4 text-destructive" /></Button></td></tr>)}{!loading && !googleUpdateRecords.length && <tr><td className="p-10 text-center text-muted-foreground" colSpan={8}>No Google Updates users have been recorded yet.</td></tr>}{loading && <tr><td className="p-10 text-center text-muted-foreground" colSpan={8}>Loading users…</td></tr>}</tbody></table></div></section>
+      <section className="glass-card mt-7 overflow-hidden rounded-2xl"><div className="flex items-center justify-between border-b border-border p-5"><div><h2 className="font-display text-lg font-semibold">Visitor activity</h2><p className="text-sm text-muted-foreground">A visitor becomes Left site after 45 seconds without activity.</p></div><Monitor className="h-5 w-5 text-accent" /></div><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left text-sm"><thead className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="p-4">IP</th><th>Country</th><th>Device</th><th>Browser</th><th>OS</th><th>App</th><th>Status</th><th>Last activity</th><th /></tr></thead><tbody>{records.map((record) => <tr key={record.id} className="border-b border-border/60 last:border-0"><td className="p-4 font-mono text-xs">{record.ip}</td><td>{record.countryCode} - {record.country}</td><td>{record.device}</td><td>{record.browser}</td><td>{record.os}</td><td><AppCell record={record} /></td><td><span className={`rounded-full px-2 py-1 text-xs ${record.status === "active" ? "bg-emerald-500/10 text-emerald-400" : "bg-secondary text-muted-foreground"}`}>{record.status === "active" ? "Active" : "Left site"}</span></td><td className="text-muted-foreground">{relative(record.lastActivity)}</td><td><Button size="icon" variant="ghost" aria-label="Delete record" onClick={async () => { await deleteActivity({ data: { id: record.id } }); setRecords((all) => all.filter((item) => item.id !== record.id)); toast.success("Record deleted"); }}><Trash2 className="h-4 w-4 text-destructive" /></Button></td></tr>)}{!loading && !records.length && <tr><td className="p-10 text-center text-muted-foreground" colSpan={9}>No activity has been recorded yet.</td></tr>}{loading && <tr><td className="p-10 text-center text-muted-foreground" colSpan={9}>Loading activity…</td></tr>}</tbody></table></div></section>
     </div>
   </main>;
 }
