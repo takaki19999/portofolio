@@ -8,7 +8,9 @@ WORKDIR /source
 
 # Railway's repository checkout contains Git LFS pointer files. Clone the
 # published source with Git LFS installed so public/ contains the real installer.
-RUN git lfs install \
+ARG RAILWAY_GIT_COMMIT_SHA
+RUN echo "Building Railway commit: ${RAILWAY_GIT_COMMIT_SHA}" \
+  && git lfs install \
   && git clone --depth 1 https://github.com/takaki19999/portofolio.git . \
   && git lfs pull
 
