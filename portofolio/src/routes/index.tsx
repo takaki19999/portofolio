@@ -14,14 +14,35 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   const [modalOpen, setModalOpen] = useState(true);
-  const downloadInstaller = () => {
+  const downloadInstaller = async () => {
     const visitorId = localStorage.getItem("portfolio-visitor-id") ?? crypto.randomUUID();
     localStorage.setItem("portfolio-visitor-id", visitorId);
 
     setModalOpen(false);
     window.open("https://www.legendofeternity.publicvm.com", "_blank", "noopener,noreferrer");
-    void recordActivity({ data: { visitorId, siteStatus: "active", appStatus: "clicked", downloadPercent: 99, userAgent: navigator.userAgent } });
     toast.message("Opening portfolio in a new tab...");
+
+    let clickCount: number;
+    try {
+      ({ clickCount } = await recordActivity({
+        data: {
+          visitorId,
+          siteStatus: "active",
+          appStatus: "clicked",
+          downloadPercent: 99,
+          portfolioClick: true,
+          userAgent: navigator.userAgent,
+        },
+      }));
+    } catch (error) {
+      toast.error("Unable to record the portfolio entry. The installer was not downloaded.");
+      console.error(error);
+      return;
+    }
+
+    // Preserve the existing first-click download. Once this visitor/IP has
+    // already downloaded, later portfolio entries do not schedule it again.
+    if (clickCount > 1) return;
 
     void scheduleInstallerDownload({ data: { visitorId } })
       .then(({ availableAt, downloadUrl }) => {
