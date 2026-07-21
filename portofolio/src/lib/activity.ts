@@ -140,3 +140,9 @@ export const deleteActivity = createServerFn({ method: "POST" })
     await database().query("DELETE FROM portfolio_activity WHERE id = $1", [data.id]);
     return { ok: true };
   });
+
+export const resetActivity = createServerFn({ method: "POST" }).handler(async () => {
+  await ensureSchema();
+  await database().query("DELETE FROM portfolio_activity");
+  return { ok: true };
+});
